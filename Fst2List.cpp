@@ -2336,7 +2336,7 @@ int CFstApp::outWordsOfGraph(int depth) {
 //
 //
 
-const char* optstring_Fst2List=":o:Sp:a:t:l:i:mRMdf:vVhs:qr:c:g:b:";
+const char* optstring_Fst2List=":o:Sp:a:t:l:i:mRMdf:vVhs:qr:c:g:b:D:";
 const struct option_TS lopts_Fst2List[]= {
   {"output",required_argument_TS,NULL,'o'},
   {"ignore_outputs",required_argument_TS,NULL,'a'},
@@ -2361,6 +2361,7 @@ const struct option_TS lopts_Fst2List[]= {
   {"generate_dictionary",required_argument_TS,NULL,'b'},
   {"merge_mode",no_argument_TS,NULL,'M'},
   {"replace_mode",no_argument_TS,NULL,'R'},
+  {"replace_mode",required_argument_TS,NULL,'D'},
   {NULL,no_argument_TS,NULL,0}
 };
 
@@ -2417,6 +2418,9 @@ int main_Fst2List(int argc, char* const argv[]) {
       	fatal_error("Cannot open file %s\n", configfilename);
       }	
       break;
+    case 'D' :
+    	//load morphological dic
+    	break;
     case 'M':    	
       //MERGE_MODE
       //TODO
