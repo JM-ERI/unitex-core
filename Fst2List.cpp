@@ -2420,6 +2420,7 @@ int main_Fst2List(int argc, char* const argv[]) {
       break;
     case 'D' :
     	//load morphological dic
+      //TODO
     	break;
     case 'M':    	
       //MERGE_MODE
