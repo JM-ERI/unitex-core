@@ -2336,7 +2336,7 @@ int CFstApp::outWordsOfGraph(int depth) {
 //
 //
 
-const char* optstring_Fst2List=":o:Sp:a:t:l:i:mzydf:vVhs:qr:c:g:b:";
+const char* optstring_Fst2List=":o:Sp:a:t:l:i:mRMdf:vVhs:qr:c:g:b:";
 const struct option_TS lopts_Fst2List[]= {
   {"output",required_argument_TS,NULL,'o'},
   {"ignore_outputs",required_argument_TS,NULL,'a'},
@@ -2359,8 +2359,8 @@ const struct option_TS lopts_Fst2List[]= {
   {"output_encoding",required_argument_TS,NULL,'q'},
   {"help",no_argument_TS,NULL,'h'},
   {"generate_dictionary",required_argument_TS,NULL,'b'},
-  {"merge_mode",no_argument_TS,NULL,'y'},
-  {"replace_mode",no_argument_TS,NULL,'z'},
+  {"merge_mode",no_argument_TS,NULL,'M'},
+  {"replace_mode",no_argument_TS,NULL,'R'},
   {NULL,no_argument_TS,NULL,0}
 };
 
@@ -2411,17 +2411,17 @@ int main_Fst2List(int argc, char* const argv[]) {
       aa.generateDictionary = true;
       configfilename = new char[strlen((char*)&options.vars()->optarg[0]) + 1];
       strcpy(configfilename, (char*) &options.vars()->optarg[0]);
-      aa.configFile = u_fopen(&vec, configfilename, U_READ);   
+      aa.configFile = u_fopen(&vec, configfilename, U_READ);
+      //u_printf("configfilename : %s \n", configfilename);     
       if (!aa.configFile) {
       	fatal_error("Cannot open file %s\n", configfilename);
       }	
-      //Ici on recupere le fichier de config
       break;
-    case 'y':    	
+    case 'M':    	
       //MERGE_MODE
       //TODO
       break;
-    case 'z':    	
+    case 'R':    	
       //REPLACE_MOD   
       //TODO
       break;
