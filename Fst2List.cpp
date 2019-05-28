@@ -273,6 +273,7 @@ public:
   char defaultIgnoreName[512]; // input file name
 
   U_FILE* configFile;
+    struct locate_parameters* p;
   bool generateDictionary;
   bool mode_morph; //true if the current state is in morphological mode
   bool isWord; //false if the state's content is not a word (like $< or $>)
@@ -2370,6 +2371,7 @@ const struct option_TS lopts_Fst2List[]= {
 int main_Fst2List(int argc, char* const argv[]) {
   char* ofilename = NULL;
   char* configfilename = NULL;
+  char* morpho_dic = NULL;
 
   unichar changeStrTo[16][MAX_CHANGE_SYMBOL_SIZE];
   int changeStrToIdx;
@@ -2420,7 +2422,17 @@ int main_Fst2List(int argc, char* const argv[]) {
       break;
     case 'D' :
     	//load morphological dic
-      //TODO
+      if (options.vars()->optarg[0]!='\0') {
+        configfilename = new char[strlen((char*)&options.vars()->optarg[0]) + 1];
+        if (morpho_dic==NULL) { 
+          morpho_dic = strdup(options.vars()->optarg);
+        }
+        else {
+          strcat(morpho_dic,";");
+          strcat(morpho_dic,options.vars()->optarg);
+        }
+        u_printf("dic.bin : %s\n", morpho_dic);  
+      }
     	break;
     case 'M':    	
       //MERGE_MODE
@@ -2679,8 +2691,19 @@ int main_Fst2List(int argc, char* const argv[]) {
   strcpy(fst2_filename,argv[options.vars()->optind]);
   aa.fileNameSet(argv[options.vars()->optind], ofilename);
   aa.vec = vec;
-  u_printf("debut du parcours de l'automate \n");
-  u_printf("aa.generateDictionary : %d\n", aa.generateDictionary);
+
+  strcpy(fst2_filename,argv[options.vars()->optind]);
+  aa.fileNameSet(argv[options.vars()->optind], ofilename);
+  aa.vec = vec;
+
+  aa.p = new_locate_parameters();
+  /*size_t step_filename_buffer = (((FILENAME_MAX / 0x10) + 1) * 0x10);
+  char* buffer_filename = (char*)malloc(step_filename_buffer * 3);
+  if (buffer_filename == NULL) {
+    fatal_alloc_error("locate_pattern");
+  } */
+
+  load_morphological_dictionaries(&aa.vec, morpho_dic, aa.p);
   aa.getWordsFromGraph(changeStrToIdx, changeStrTo, fst2_filename);
   u_printf("fin \n");
   u_fclose(aa.configFile);
