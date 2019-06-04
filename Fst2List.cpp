@@ -780,6 +780,7 @@ public:
   unichar OUTPUTBUFFER[4096]; // buffer used to print the box outputs
   int inBufferCnt;            // buffer counter for box inputs
   int outBufferCnt;           // buffer counter for box outputs
+  unichar entriesFromDic[1024][256];
 
   void resetBufferCounters() {
      inputPtrCnt = outputPtrCnt = inBufferCnt = outBufferCnt = 0;
@@ -890,7 +891,7 @@ public:
       INPUTBUFFER[inBufferCnt] = 0;
       OUTPUTBUFFER[outBufferCnt] = 0;
 
-      //the multidelaf mod is only generated when the user checks the split mod		
+      //the output file is only generated when the user checks the split mod		
       if ((automateMode == TRANMODE) && outBufferCnt && generateDictionary == true) {
       	//Split outputs mod
         //u_fprintf(foutput, "INPUT :");
@@ -2337,32 +2338,33 @@ static void update_last_position(struct locate_parameters* p, int pos) {
   }
 }
 
-static void explore_dic_test(struct locate_parameters* p,Dictionary* d, int offset, unichar* inflected, int pos_in_inflected, 
-                      int pos_offset, Ustring *line_buffer,Ustring* ustr, struct pattern* pattern,Abstract_allocator allocator, U_FILE* f) {
+static void extract_entries_from_dic(struct locate_parameters* p,Dictionary* d, int offset, unichar* inflected, int pos_in_inflected, 
+                      int pos_offset, Ustring *line_buffer,Ustring* ustr, struct pattern* pattern,Abstract_allocator allocator, 
+                      unichar entries[][256], int n_entries) {
   int final,n_transitions,inf_number;
   int z=save_output(ustr);
+  bool match;
   offset=read_dictionary_state(d,offset,&final,&n_transitions,&inf_number);
   if (final) {
     //If the current state is final, uncompress the entry to obtain the label and compare the pattern with the result of uncompress
-    inflected[pos_in_inflected] = '\0';    
-    //u_fputs(inflected, f);   
+    inflected[pos_in_inflected] = '\0';     
     struct list_ustring* tmp = d->inf->codes[inf_number];
     uncompress_entry(inflected, tmp->string, line_buffer);   
-    /*u_fprintf(f, " ");
-    u_fputs(line_buffer->str, f);
-    u_fprintf(f, "\n");*/    
     struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
-    u_fprintf(f, "test : %d\n", is_entry_compatible_with_pattern(dela_entry, pattern));
-    //TODO : extract all the line that match the pattern
+    match = is_entry_compatible_with_pattern(dela_entry, pattern);
+    if(match == 1) {
+      u_strcpy(entries[n_entries++], inflected);
+      u_strcpy(entries[n_entries++], line_buffer->str);
+    }
   }
   unichar c;
   int adr;
   for (int i = 0; i < n_transitions; i++) {  
-    //if the current state is not finaln, explore all the outgoing transitions    
+    //if the current state is not final, explore all the outgoing transitions    
     update_last_position(p, pos_offset);
     offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
     inflected[pos_in_inflected] = c;       
-    explore_dic_test(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, f);
+    extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, entries, n_entries);
     restore_output(z,ustr);
   }
 }
@@ -2730,38 +2732,29 @@ int main_Fst2List(int argc, char* const argv[]) {
   aa.fileNameSet(argv[options.vars()->optind], ofilename);
   aa.vec = vec;
 
-  aa.p = new_locate_parameters();
+  /*aa.p = new_locate_parameters();
   load_morphological_dictionaries(&aa.vec, morpho_dic, aa.p);
-
-  U_FILE* f = NULL;
-  f = u_fopen(ASCII, "../text.txt", U_WRITE); 
-  unichar* inflected = u_null_string;
-  Ustring* ustr=new_Ustring();
-  Ustring* line_buffer=new_Ustring();
-  int pos_offset = 0;
-  int pos_in_inflected = 0;
   
   Abstract_allocator allocator=NULL;
   allocator=create_abstract_allocator("explore_dic_in_morpho_mode_standard",AllocatorFreeOnlyAtAllocatorDelete|AllocatorTipGrowingOftenRecycledObject,0);
   unichar t[] = {(unichar)'N', (unichar)'\0'};
   struct pattern* pattern = build_pattern(t, NULL, 0, allocator);
 
-  explore_dic_test(
+  extract_entries_from_dic(
                         aa.p,
                         aa.p->morpho_dic[1],
                         aa.p->morpho_dic[1]->initial_state_offset,
-                        inflected, 
-                        pos_in_inflected, 
-                        pos_offset, 
-                        line_buffer, 
-                        ustr, 
+                        u_null_string, 
+                        0, 
+                        0, 
+                        new_Ustring(), 
+                        new_Ustring(), 
                         pattern,
                         allocator,
-                        f);
+                        aa.entriesFromDic,
+                        0);*/
   aa.getWordsFromGraph(changeStrToIdx, changeStrTo, fst2_filename);
   u_fclose(aa.configFile);
-
-  u_fclose(f);
 
   delete ofilename;
   return SUCCESS_RETURN_CODE;
