@@ -32,7 +32,12 @@
 #include "Error.h"
 #include "Transitions.h"
 #include "UnitexGetOpt.h"
+
 #include "LocatePattern.h"
+#include "MorphologicalLocate.h"
+
+//#include "DELA.h"
+//#include "StringParsing.h"
 
 #ifndef HAS_UNITEX_NAMESPACE
 #define HAS_UNITEX_NAMESPACE 1
@@ -884,13 +889,6 @@ public:
       }
       INPUTBUFFER[inBufferCnt] = 0;
       OUTPUTBUFFER[outBufferCnt] = 0;
-
-      //code for test
-  	  /*if((prMode == PR_TOGETHER || automateMode != TRANMODE)) {
-  	    u_fprintf(foutput, "INPUT : ");
-    	u_fputs(INPUTBUFFER, foutput);
-		  u_fprintf(foutput, "\n");
-	     }  */
 
       //the multidelaf mod is only generated when the user checks the split mod		
       if ((automateMode == TRANMODE) && outBufferCnt && generateDictionary == true) {
@@ -2038,7 +2036,7 @@ int CFstApp::outWordsOfGraph(int depth) {
 	      } else {
 	        tp = u_null_string;
 	      }	      
-	  }	        
+	    }	        
     }
     //wprintf(L"{%d,%x,%x,%s,%s}",s,pathStack[s].stateNo,pathStack[s].tag,ep,tp);
     markCtlChar = 0;
@@ -2331,6 +2329,42 @@ int CFstApp::outWordsOfGraph(int depth) {
     markPreCtlChar = markCtlChar;
   }// end for 's = 0; s < pathIdx; s++'
   return 0;
+}
+
+static void update_last_position(struct locate_parameters* p, int pos) {
+  if (pos > p->last_tested_position) {
+    p->last_tested_position = pos;
+  }
+}
+
+static void explore_dic_test(struct locate_parameters* p,Dictionary* d, int offset, unichar* inflected, int pos_in_inflected, 
+                      int pos_offset, Ustring *line_buffer,Ustring* ustr, struct pattern* pattern,Abstract_allocator allocator, U_FILE* f) {
+  int final,n_transitions,inf_number;
+  int z=save_output(ustr);
+  offset=read_dictionary_state(d,offset,&final,&n_transitions,&inf_number);
+  if (final) {
+    //If the current state is final, uncompress the entry to obtain the label and compare the pattern with the result of uncompress
+    inflected[pos_in_inflected] = '\0';    
+    //u_fputs(inflected, f);   
+    struct list_ustring* tmp = d->inf->codes[inf_number];
+    uncompress_entry(inflected, tmp->string, line_buffer);   
+    /*u_fprintf(f, " ");
+    u_fputs(line_buffer->str, f);
+    u_fprintf(f, "\n");*/    
+    struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
+    u_fprintf(f, "test : %d\n", is_entry_compatible_with_pattern(dela_entry, pattern));
+    //TODO : extract all the line that match the pattern
+  }
+  unichar c;
+  int adr;
+  for (int i = 0; i < n_transitions; i++) {  
+    //if the current state is not finaln, explore all the outgoing transitions    
+    update_last_position(p, pos_offset);
+    offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
+    inflected[pos_in_inflected] = c;       
+    explore_dic_test(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, f);
+    restore_output(z,ustr);
+  }
 }
 
 //
@@ -2697,16 +2731,38 @@ int main_Fst2List(int argc, char* const argv[]) {
   aa.vec = vec;
 
   aa.p = new_locate_parameters();
-  /*size_t step_filename_buffer = (((FILENAME_MAX / 0x10) + 1) * 0x10);
-  char* buffer_filename = (char*)malloc(step_filename_buffer * 3);
-  if (buffer_filename == NULL) {
-    fatal_alloc_error("locate_pattern");
-  } */
-
   load_morphological_dictionaries(&aa.vec, morpho_dic, aa.p);
+
+  U_FILE* f = NULL;
+  f = u_fopen(ASCII, "../text.txt", U_WRITE); 
+  unichar* inflected = u_null_string;
+  Ustring* ustr=new_Ustring();
+  Ustring* line_buffer=new_Ustring();
+  int pos_offset = 0;
+  int pos_in_inflected = 0;
+  
+  Abstract_allocator allocator=NULL;
+  allocator=create_abstract_allocator("explore_dic_in_morpho_mode_standard",AllocatorFreeOnlyAtAllocatorDelete|AllocatorTipGrowingOftenRecycledObject,0);
+  unichar t[] = {(unichar)'N', (unichar)'\0'};
+  struct pattern* pattern = build_pattern(t, NULL, 0, allocator);
+
+  explore_dic_test(
+                        aa.p,
+                        aa.p->morpho_dic[1],
+                        aa.p->morpho_dic[1]->initial_state_offset,
+                        inflected, 
+                        pos_in_inflected, 
+                        pos_offset, 
+                        line_buffer, 
+                        ustr, 
+                        pattern,
+                        allocator,
+                        f);
   aa.getWordsFromGraph(changeStrToIdx, changeStrTo, fst2_filename);
-  u_printf("fin \n");
   u_fclose(aa.configFile);
+
+  u_fclose(f);
+
   delete ofilename;
   return SUCCESS_RETURN_CODE;
 }
