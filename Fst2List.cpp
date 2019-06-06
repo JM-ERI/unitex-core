@@ -274,9 +274,10 @@ public:
   char ofnameOnly[512];        // output file name
   char defaultIgnoreName[512]; // input file name
 
-  U_FILE* configFile;
-    struct locate_parameters* p;
-  bool generateDictionary;
+  U_FILE* configFile; //configFile to parse a multidelaf string into a delaf string
+  struct locate_parameters* p;
+  int dicCnt; //number of dic to explore when a lexical_mask is encoutered
+  bool generateDictionary;  //boolean for generate_dictionary option
   bool mode_morph; //true if the current state is in morphological mode
   bool isWord; //false if the state's content is not a word (like $< or $>)
 
@@ -777,7 +778,10 @@ public:
   unichar OUTPUTBUFFER[4096]; // buffer used to print the box outputs
   int inBufferCnt;            // buffer counter for box inputs
   int outBufferCnt;           // buffer counter for box outputs
-  unichar entriesFromDic[8192][48];
+  
+  unichar **entriesFromDic;
+  int maxEntriesNumber = 64;  // max number of words in entriesFromDic
+  int entriesCnt;             // number of words in entriesFromDic
 
   void resetBufferCounters() {
      inputPtrCnt = outputPtrCnt = inBufferCnt = outBufferCnt = 0;
@@ -1262,6 +1266,56 @@ public:
       u_fprintf(foutput, "%d (%d ::%d)%d\n", i, pathStack[i].stackStateID,
           pathStack[i].stateNo, pathStack[i].tag);
   }
+
+  static void update_last_position(struct locate_parameters* p, int pos) {
+  if (pos > p->last_tested_position) {
+    p->last_tested_position = pos;
+  }
+}
+
+void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int offset, unichar inflected[], int pos_in_inflected, 
+                      int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator) {
+  int final,n_transitions,inf_number;
+  int z=save_output(ustr);
+  bool match;
+  offset=read_dictionary_state(d,offset,&final,&n_transitions,&inf_number);
+  if (final) {
+    //If the current state is final, uncompress the entry to obtain the label and compare the pattern with the result of uncompress
+    inflected[pos_in_inflected] = '\0';     
+    struct list_ustring* tmp = d->inf->codes[inf_number];
+    uncompress_entry(inflected, tmp->string, line_buffer);   
+    struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
+    match = is_entry_compatible_with_pattern(dela_entry, pattern);
+    if(match == 1) {
+      if(entriesCnt >= maxEntriesNumber - 2) {
+        //realloc
+        entriesFromDic = (unichar **)realloc(entriesFromDic, maxEntriesNumber * 2 * sizeof(unichar*));
+        if(entriesFromDic == NULL) 
+          fatal_error("Realloc error in extract_entries_from_dic");
+        for(int i = maxEntriesNumber; i < maxEntriesNumber * 2; i++) {
+          entriesFromDic[i] = (unichar*)malloc(sizeof(unichar) * 512);
+          if(entriesFromDic[i] == NULL) 
+            fatal_error("Malloc error in extract_entries_from_dic");
+        }
+        maxEntriesNumber *= 2;
+        //end of realloc
+      }
+      u_strcpy(entriesFromDic[entriesCnt++], inflected);
+      u_strcpy(entriesFromDic[entriesCnt++], line_buffer->str);
+    }
+    free_dela_entry(dela_entry, allocator);
+  }
+  unichar c;
+  int adr;
+  for (int i = 0; i < n_transitions; i++) {  
+    //if the current state is not final, explore all the outgoing transitions    
+    update_last_position(p, pos_offset);
+    offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
+    inflected[pos_in_inflected] = c;       
+    extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator);
+    restore_output(z,ustr);
+  }
+}
 
 private:
   /* prevent GCC warning */
@@ -1961,44 +2015,6 @@ unichar * uascToNum(unichar *uasc, int *val) {
   return wordPtr;
 }
 
-static void update_last_position(struct locate_parameters* p, int pos) {
-  if (pos > p->last_tested_position) {
-    p->last_tested_position = pos;
-  }
-}
-
-static void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int offset, unichar inflected[], int pos_in_inflected, 
-                      int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, 
-                      unichar entries[][48], int *n_entries, U_FILE* f) {
-  int final,n_transitions,inf_number;
-  int z=save_output(ustr);
-  bool match;
-  offset=read_dictionary_state(d,offset,&final,&n_transitions,&inf_number);
-  if (final) {
-    //If the current state is final, uncompress the entry to obtain the label and compare the pattern with the result of uncompress
-    inflected[pos_in_inflected] = '\0';     
-    struct list_ustring* tmp = d->inf->codes[inf_number];
-    uncompress_entry(inflected, tmp->string, line_buffer);   
-    struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
-    match = is_entry_compatible_with_pattern(dela_entry, pattern);
-    if(match == 1) {
-      u_strcpy(entries[(*n_entries)++], inflected);
-      u_strcpy(entries[(*n_entries)++], line_buffer->str);
-    }
-    //free_dela_entry(dela_entry, allocator);
-  }
-  unichar c;
-  int adr;
-  for (int i = 0; i < n_transitions; i++) {  
-    //if the current state is not final, explore all the outgoing transitions    
-    update_last_position(p, pos_offset);
-    offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
-    inflected[pos_in_inflected] = c;       
-    extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, entries, n_entries, f);
-    restore_output(z,ustr);
-  }
-}
-
 /**
  * prints the current path
  *
@@ -2014,7 +2030,6 @@ int CFstApp::outWordsOfGraph(int depth) {
   unichar *tp; //transducer buffer ptr
   unichar *chp;
   unichar inflected[512];
-  int n_entries;
   int indicateFirstUsed;
   int i;
   int markCtlChar, markPreCtlChar;
@@ -2056,7 +2071,18 @@ int CFstApp::outWordsOfGraph(int depth) {
         lexical_mask++;
         
         struct pattern* pattern = build_pattern(lexical_mask, NULL, 0, allocator);    
-        n_entries = 0;                
+        entriesCnt = 0;
+
+        //Allocation
+        entriesFromDic = (unichar**)malloc(sizeof(unichar*) * maxEntriesNumber);
+        if(entriesFromDic == NULL) 
+          fatal_error("Realloc error in outWordsOfGraph");
+        for(int i = 0; i < maxEntriesNumber; i++) {
+          entriesFromDic[i] = (unichar*)malloc(sizeof(unichar) * 512);
+          if(entriesFromDic[i] == NULL) 
+            fatal_error("Malloc error in outWordsOfGraph");
+        }    
+        //End of allocation            
         extract_entries_from_dic(
                         p,
                         p->morpho_dic[1],
@@ -2067,12 +2093,18 @@ int CFstApp::outWordsOfGraph(int depth) {
                         new_Ustring(), 
                         new_Ustring(), 
                         pattern,
-                        allocator,
-                        entriesFromDic,
-                        &n_entries,
-                        foutput);  
+                        allocator                      
+        );  
         free_pattern(pattern, allocator); 
-        u_fprintf(foutput, "n_entries : %d\n", n_entries);     
+        //free the entries
+        for(int i = 0; i < maxEntriesNumber; i++) {
+          free(entriesFromDic[i]);
+        }  
+        free(entriesFromDic);
+        entriesFromDic = NULL;
+        //end of free
+        u_fprintf(foutput, "entriesCnt : %d\n", entriesCnt);
+        u_fprintf(foutput, "dic number : %d\n", dicCnt);      
       }
 
       //Checks if the current node is a morphological begin or end and updates the boolean to begin/stop the morph mode
@@ -2487,8 +2519,8 @@ int main_Fst2List(int argc, char* const argv[]) {
         else {
           strcat(morpho_dic,";");
           strcat(morpho_dic,options.vars()->optarg);
-        }
-        u_printf("dic.bin : %s\n", morpho_dic);  
+        } 
+        aa.dicCnt++;
       }
     	break;
     case 'M':    	
@@ -2755,27 +2787,7 @@ int main_Fst2List(int argc, char* const argv[]) {
 
   aa.p = new_locate_parameters();
   load_morphological_dictionaries(&aa.vec, morpho_dic, aa.p);
-  
-  /*
-  Abstract_allocator allocator=NULL;
-  allocator=create_abstract_allocator("explore_dic_in_morpho_mode_standard",AllocatorFreeOnlyAtAllocatorDelete|AllocatorTipGrowingOftenRecycledObject,0);
-  unichar t[] = {(unichar)'N', (unichar)'\0'};
-  struct pattern* pattern = build_pattern(t, NULL, 0, allocator);
-  int n_entries = 0;
-  extract_entries_from_dic(
-                        aa.p,
-                        aa.p->morpho_dic[1],
-                        aa.p->morpho_dic[1]->initial_state_offset,
-                        u_null_string, 
-                        0, 
-                        0, 
-                        new_Ustring(), 
-                        new_Ustring(), 
-                        pattern,
-                        allocator,
-                        aa.entriesFromDic,
-                        &n_entries);
-  */
+
   aa.getWordsFromGraph(changeStrToIdx, changeStrTo, fst2_filename);
   u_fclose(aa.configFile);
 
