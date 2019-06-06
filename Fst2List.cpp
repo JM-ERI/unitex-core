@@ -36,9 +36,6 @@
 #include "LocatePattern.h"
 #include "MorphologicalLocate.h"
 
-//#include "DELA.h"
-//#include "StringParsing.h"
-
 #ifndef HAS_UNITEX_NAMESPACE
 #define HAS_UNITEX_NAMESPACE 1
 #endif
@@ -780,7 +777,7 @@ public:
   unichar OUTPUTBUFFER[4096]; // buffer used to print the box outputs
   int inBufferCnt;            // buffer counter for box inputs
   int outBufferCnt;           // buffer counter for box outputs
-  unichar entriesFromDic[1024][256];
+  unichar entriesFromDic[8192][48];
 
   void resetBufferCounters() {
      inputPtrCnt = outputPtrCnt = inBufferCnt = outBufferCnt = 0;
@@ -1964,6 +1961,44 @@ unichar * uascToNum(unichar *uasc, int *val) {
   return wordPtr;
 }
 
+static void update_last_position(struct locate_parameters* p, int pos) {
+  if (pos > p->last_tested_position) {
+    p->last_tested_position = pos;
+  }
+}
+
+static void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int offset, unichar inflected[], int pos_in_inflected, 
+                      int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, 
+                      unichar entries[][48], int *n_entries, U_FILE* f) {
+  int final,n_transitions,inf_number;
+  int z=save_output(ustr);
+  bool match;
+  offset=read_dictionary_state(d,offset,&final,&n_transitions,&inf_number);
+  if (final) {
+    //If the current state is final, uncompress the entry to obtain the label and compare the pattern with the result of uncompress
+    inflected[pos_in_inflected] = '\0';     
+    struct list_ustring* tmp = d->inf->codes[inf_number];
+    uncompress_entry(inflected, tmp->string, line_buffer);   
+    struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
+    match = is_entry_compatible_with_pattern(dela_entry, pattern);
+    if(match == 1) {
+      u_strcpy(entries[(*n_entries)++], inflected);
+      u_strcpy(entries[(*n_entries)++], line_buffer->str);
+    }
+    //free_dela_entry(dela_entry, allocator);
+  }
+  unichar c;
+  int adr;
+  for (int i = 0; i < n_transitions; i++) {  
+    //if the current state is not final, explore all the outgoing transitions    
+    update_last_position(p, pos_offset);
+    offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
+    inflected[pos_in_inflected] = c;       
+    extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, entries, n_entries, f);
+    restore_output(z,ustr);
+  }
+}
+
 /**
  * prints the current path
  *
@@ -1978,6 +2013,8 @@ int CFstApp::outWordsOfGraph(int depth) {
   unichar *ep; //input buffer ptr
   unichar *tp; //transducer buffer ptr
   unichar *chp;
+  unichar inflected[512];
+  int n_entries;
   int indicateFirstUsed;
   int i;
   int markCtlChar, markPreCtlChar;
@@ -1985,6 +2022,7 @@ int CFstApp::outWordsOfGraph(int depth) {
   inBufferCnt = outBufferCnt = 0;
   inputPtrCnt = outputPtrCnt = 0;
   unichar aaBuffer_for_getLabelNumber[64];
+  Abstract_allocator allocator=create_abstract_allocator("explore_dic_in_morpho_mode_standard",AllocatorFreeOnlyAtAllocatorDelete|AllocatorTipGrowingOftenRecycledObject,0);
 
   //  fini = (tagQ[tagQidx - 1] & (SUBGRAPH_PATH_MARK | LOOP_PATH_MARK)) ?
   //    tagQ[tagQidx -1 ]:0;
@@ -2006,11 +2044,37 @@ int CFstApp::outWordsOfGraph(int depth) {
     } else {
       Tag = a->tags[pathStack[s].tag & SUB_ID_MASK];
       isWord = false;
-    
+      
+      //u_fprintf(foutput, "input : ");
+      //u_fputs(Tag->input, foutput);
 
-      /*u_fprintf(foutput, "tag input : ", Tag->type);
-      u_fputs(Tag->input, foutput);
-      u_fprintf(foutput, "tag type : %d\n", Tag->type);*/
+      //If the input is a lexical_mask, we check the dictionaries      
+      if(Tag->input[0] == '<' && Tag->input[u_strlen(Tag->input) - 1] == '>') {        
+        unichar* lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
+        u_strcpy(lexical_mask, Tag->input);
+        lexical_mask[u_strlen(lexical_mask) -1] = '\0';
+        lexical_mask++;
+        
+        struct pattern* pattern = build_pattern(lexical_mask, NULL, 0, allocator);    
+        n_entries = 0;                
+        extract_entries_from_dic(
+                        p,
+                        p->morpho_dic[1],
+                        p->morpho_dic[1]->initial_state_offset,
+                        inflected, 
+                        0, 
+                        0, 
+                        new_Ustring(), 
+                        new_Ustring(), 
+                        pattern,
+                        allocator,
+                        entriesFromDic,
+                        &n_entries,
+                        foutput);  
+        free_pattern(pattern, allocator); 
+        u_fprintf(foutput, "n_entries : %d\n", n_entries);     
+      }
+
       //Checks if the current node is a morphological begin or end and updates the boolean to begin/stop the morph mode
       switch (Tag->type) {
       	case BEGIN_MORPHO_TAG :    		 
@@ -2264,9 +2328,6 @@ int CFstApp::outWordsOfGraph(int depth) {
           return 1;
         }
       } else {
-      	/*u_fprintf(foutput, "ok15\nEbuff : ");
-      	u_fputs(EBuff, foutput); 
-      	u_fprintf(foutput, "\n");*/
         if (outOneWord(u_null_string) != 0) {
           return 1;
         }
@@ -2316,9 +2377,6 @@ int CFstApp::outWordsOfGraph(int depth) {
     }
     if (wordMode) {
       if (inputPtrCnt || outputPtrCnt) {
-      	/*u_fprintf(foutput, "ok19\nEbuff : ");
-      	u_fputs(EBuff, foutput); 
-      	u_fprintf(foutput, "\n");*/
         if (outOneWord(0) != 0) {
           return 1;
         }
@@ -2330,43 +2388,6 @@ int CFstApp::outWordsOfGraph(int depth) {
     markPreCtlChar = markCtlChar;
   }// end for 's = 0; s < pathIdx; s++'
   return 0;
-}
-
-static void update_last_position(struct locate_parameters* p, int pos) {
-  if (pos > p->last_tested_position) {
-    p->last_tested_position = pos;
-  }
-}
-
-static void extract_entries_from_dic(struct locate_parameters* p,Dictionary* d, int offset, unichar* inflected, int pos_in_inflected, 
-                      int pos_offset, Ustring *line_buffer,Ustring* ustr, struct pattern* pattern,Abstract_allocator allocator, 
-                      unichar entries[][256], int n_entries) {
-  int final,n_transitions,inf_number;
-  int z=save_output(ustr);
-  bool match;
-  offset=read_dictionary_state(d,offset,&final,&n_transitions,&inf_number);
-  if (final) {
-    //If the current state is final, uncompress the entry to obtain the label and compare the pattern with the result of uncompress
-    inflected[pos_in_inflected] = '\0';     
-    struct list_ustring* tmp = d->inf->codes[inf_number];
-    uncompress_entry(inflected, tmp->string, line_buffer);   
-    struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
-    match = is_entry_compatible_with_pattern(dela_entry, pattern);
-    if(match == 1) {
-      u_strcpy(entries[n_entries++], inflected);
-      u_strcpy(entries[n_entries++], line_buffer->str);
-    }
-  }
-  unichar c;
-  int adr;
-  for (int i = 0; i < n_transitions; i++) {  
-    //if the current state is not final, explore all the outgoing transitions    
-    update_last_position(p, pos_offset);
-    offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
-    inflected[pos_in_inflected] = c;       
-    extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, entries, n_entries);
-    restore_output(z,ustr);
-  }
 }
 
 //
@@ -2732,14 +2753,15 @@ int main_Fst2List(int argc, char* const argv[]) {
   aa.fileNameSet(argv[options.vars()->optind], ofilename);
   aa.vec = vec;
 
-  /*aa.p = new_locate_parameters();
+  aa.p = new_locate_parameters();
   load_morphological_dictionaries(&aa.vec, morpho_dic, aa.p);
   
+  /*
   Abstract_allocator allocator=NULL;
   allocator=create_abstract_allocator("explore_dic_in_morpho_mode_standard",AllocatorFreeOnlyAtAllocatorDelete|AllocatorTipGrowingOftenRecycledObject,0);
   unichar t[] = {(unichar)'N', (unichar)'\0'};
   struct pattern* pattern = build_pattern(t, NULL, 0, allocator);
-
+  int n_entries = 0;
   extract_entries_from_dic(
                         aa.p,
                         aa.p->morpho_dic[1],
@@ -2752,7 +2774,8 @@ int main_Fst2List(int argc, char* const argv[]) {
                         pattern,
                         allocator,
                         aa.entriesFromDic,
-                        0);*/
+                        &n_entries);
+  */
   aa.getWordsFromGraph(changeStrToIdx, changeStrTo, fst2_filename);
   u_fclose(aa.configFile);
 
