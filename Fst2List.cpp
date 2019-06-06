@@ -1268,13 +1268,13 @@ public:
   }
 
   static void update_last_position(struct locate_parameters* p, int pos) {
-  if (pos > p->last_tested_position) {
-    p->last_tested_position = pos;
-  }
-}
+    if (pos > p->last_tested_position) {
+      p->last_tested_position = pos;
+    }
+  } 
 
 void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int offset, unichar inflected[], int pos_in_inflected, 
-                      int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator) {
+                      int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, U_FILE* f) {
   int final,n_transitions,inf_number;
   int z=save_output(ustr);
   bool match;
@@ -1286,6 +1286,9 @@ void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int of
     uncompress_entry(inflected, tmp->string, line_buffer);   
     struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
     match = is_entry_compatible_with_pattern(dela_entry, pattern);
+
+          u_strcpy(entriesFromDic[entriesCnt++], inflected);
+      u_strcpy(entriesFromDic[entriesCnt++], line_buffer->str);
     if(match == 1) {
       if(entriesCnt >= maxEntriesNumber - 2) {
         //realloc
@@ -1312,7 +1315,7 @@ void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int of
     update_last_position(p, pos_offset);
     offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
     inflected[pos_in_inflected] = c;       
-    extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator);
+    extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, f);
     restore_output(z,ustr);
   }
 }
@@ -2047,6 +2050,10 @@ int CFstApp::outWordsOfGraph(int depth) {
   markCtlChar = markPreCtlChar = 0;
   indicateFirstUsed = 0;
   count_in_line = 0;
+  /*u_fprintf(foutput, "depth : %d\n", depth);
+  u_fprintf(foutput, "ib : ");
+  u_fputs(INPUTBUFFER, foutput);
+  u_fprintf(foutput, "\n");*/
   //printPathStack();
   for (s = 0; s < pathIdx; s++) {
     inputBuffer[inputPtrCnt] = outputBuffer[outputPtrCnt] = 0;
@@ -2059,20 +2066,13 @@ int CFstApp::outWordsOfGraph(int depth) {
     } else {
       Tag = a->tags[pathStack[s].tag & SUB_ID_MASK];
       isWord = false;
-      
-      //u_fprintf(foutput, "input : ");
-      //u_fputs(Tag->input, foutput);
-
       //If the input is a lexical_mask, we check the dictionaries      
       if(Tag->input[0] == '<' && Tag->input[u_strlen(Tag->input) - 1] == '>') {        
         unichar* lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
         u_strcpy(lexical_mask, Tag->input);
         lexical_mask[u_strlen(lexical_mask) -1] = '\0';
-        lexical_mask++;
-        
+        lexical_mask++;        
         struct pattern* pattern = build_pattern(lexical_mask, NULL, 0, allocator);    
-        entriesCnt = 0;
-
         //Allocation
         entriesFromDic = (unichar**)malloc(sizeof(unichar*) * maxEntriesNumber);
         if(entriesFromDic == NULL) 
@@ -2082,29 +2082,46 @@ int CFstApp::outWordsOfGraph(int depth) {
           if(entriesFromDic[i] == NULL) 
             fatal_error("Malloc error in outWordsOfGraph");
         }    
-        //End of allocation            
-        extract_entries_from_dic(
-                        p,
-                        p->morpho_dic[1],
-                        p->morpho_dic[1]->initial_state_offset,
-                        inflected, 
-                        0, 
-                        0, 
-                        new_Ustring(), 
-                        new_Ustring(), 
-                        pattern,
-                        allocator                      
-        );  
+        //End of allocation  
+        entriesCnt = 0;
+        for(int i = 0; i < dicCnt; i++) {          
+          extract_entries_from_dic(
+                          p,
+                          p->morpho_dic[i],
+                          p->morpho_dic[i]->initial_state_offset,
+                          inflected, 
+                          0, 
+                          0, 
+                          new_Ustring(), 
+                          new_Ustring(), 
+                          pattern,
+                          allocator,
+                          foutput                      
+          );
+        }  
+        u_fprintf(foutput, "entriesCnt : %d\n", entriesCnt);
+        u_fprintf(foutput, "dic number : %d\n", dicCnt); 
+
         free_pattern(pattern, allocator); 
-        //free the entries
-        for(int i = 0; i < maxEntriesNumber; i++) {
+        //free and process the entries
+        for(int i = 0; i < maxEntriesNumber; i+=2) {
+          //TODO : process each entry to add them in the outputfile
+          
+          /*int x = u_strlen(entriesFromDic[i]);          
+          int y = u_strlen(entriesFromDic[i+1]); 
+          for(int j = 0; j < x; j++) {
+            inputBuffer[inputPtrCnt++] = entriesFromDic[i][j];
+          }
+          for(int j = 0; j < y; j++) {
+            outputBuffer[outputPtrCnt++] = entriesFromDic[i+1][j];
+          }
+          outWordsOfGraph(depth);*/
+
           free(entriesFromDic[i]);
         }  
         free(entriesFromDic);
         entriesFromDic = NULL;
-        //end of free
-        u_fprintf(foutput, "entriesCnt : %d\n", entriesCnt);
-        u_fprintf(foutput, "dic number : %d\n", dicCnt);      
+        //end of free     
       }
 
       //Checks if the current node is a morphological begin or end and updates the boolean to begin/stop the morph mode
