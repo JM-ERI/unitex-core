@@ -228,7 +228,7 @@ public:
   int exploreSubAuto(int startSubAutoNum);
   int getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CHANGE_SYMBOL_SIZE], char *fst2_file_name);
   int exploreSubgraphRecursively(int stackStateID, int autodep, int testState, int depthState);
-  int outWordsOfGraph(int depth);
+  int outWordsOfGraph(int currentDepth, int depth);
   int checkAutoCallStack(); // unused function
 
   // Stack of invocations of subgraphs
@@ -740,7 +740,7 @@ public:
         case LABEL:
           if (listOut) {
             pathStack[pathIdx - 1].stateNo |= STOP_PATH_MARK;
-            outWordsOfGraph(scanner);
+            outWordsOfGraph(0, scanner);
           } else {
             //          saveNodeIndex(scanner);
             setIdentifyValue(scanner, pathIdx);
@@ -756,7 +756,7 @@ public:
             pathStack[scanner].stateNo |= LOOP_PATH_MARK;
             pathStack[pathIdx - 1].stateNo |= LOOP_PATH_MARK
                 | STOP_PATH_MARK;
-            outWordsOfGraph(depth);
+            outWordsOfGraph(0, depth);
             pathStack[scanner].stateNo &= ~LOOP_PATH_MARK;
           }
           break;
@@ -893,7 +893,7 @@ public:
       OUTPUTBUFFER[outBufferCnt] = 0;
 
       //the output file is only generated when the user checks the split mod		
-      if ((automateMode == TRANMODE) && outBufferCnt && generateDictionary == true) {
+      if ((automateMode == TRANMODE) && outBufferCnt /*&& generateDictionary == true*/) {
       	//Split outputs mod
         //u_fprintf(foutput, "INPUT :");
     	  u_fputs(INPUTBUFFER, foutput);
@@ -1287,8 +1287,6 @@ void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int of
     struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
     match = is_entry_compatible_with_pattern(dela_entry, pattern);
 
-          u_strcpy(entriesFromDic[entriesCnt++], inflected);
-      u_strcpy(entriesFromDic[entriesCnt++], line_buffer->str);
     if(match == 1) {
       if(entriesCnt >= maxEntriesNumber - 2) {
         //realloc
@@ -1549,14 +1547,11 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
     break;
   }
   case FST2LIST_DEBUG:
-  	u_printf("DEBUG\n");
     break;
   case FULL:
-  	u_printf("FULL\n");
     switch (traitAuto) {
     case SINGLE: {
       // check for loops before writing the result
-      u_printf("SINGLE\n");
       if (enableLoopCheck) {
         listOut = 0;
         exploreSubAuto(1); // mark loop path start nodes
@@ -1594,7 +1589,6 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
         }
       }
       if (recursiveMode == SYMBOL) {
-      	u_printf("SYMBOL\n");
         if (printOutCycle() != 0) {
           closeOutput();
           return 1;
@@ -1605,7 +1599,6 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
       break;
     case MULTI: // the first graph has only the names of the initial graphs
     {
-      u_printf("MULTI\n");
       U_FILE* listFile;
       unichar *wordPtr;
       Transition *trans;
@@ -1754,7 +1747,7 @@ int CFstApp::exploreSubgraphRecursively(int stackStateID, int autoDepth, int sta
       pathStack[pathIdx].stateNo = STOP_PATH_MARK;
       pathStack[pathIdx].tag = 0;
       pathIdx++;
-      if (outWordsOfGraph(pathIdx) != 0) {
+      if (outWordsOfGraph(0, pathIdx) != 0) {
         return 1;
       }
       pathIdx--;
@@ -1817,7 +1810,7 @@ int CFstApp::exploreSubgraphRecursively(int stackStateID, int autoDepth, int sta
         pathStack[pathIdx].tag = 0;
         pathStack[pathIdx].stackStateID = stackStateID;
         pathIdx++;
-        if (outWordsOfGraph(pathIdx) != 0) {
+        if (outWordsOfGraph(0, pathIdx) != 0) {
           return 1;
         }
         pathIdx--;
@@ -1833,7 +1826,7 @@ int CFstApp::exploreSubgraphRecursively(int stackStateID, int autoDepth, int sta
         pathStack[pathIdx].stateNo = STOP_PATH_MARK;
         pathStack[pathIdx].tag = trans->tag_number & ~STOP_PATH_MARK;
         pathIdx++;
-        if (outWordsOfGraph(pathIdx) != 0) {
+        if (outWordsOfGraph(0, pathIdx) != 0) {
           return 1;
         }
         pathIdx--;
@@ -1866,7 +1859,7 @@ int CFstApp::exploreSubgraphRecursively(int stackStateID, int autoDepth, int sta
           pathStack[pathIdx].tag = trans->tag_number;
           pathStack[pathIdx].stateNo = STOP_PATH_MARK;
           pathIdx++;
-          if (outWordsOfGraph(pathIdx) != 0) {
+          if (outWordsOfGraph(0, pathIdx) != 0) {
             return 1;
           }
           pathIdx--;
@@ -2024,7 +2017,7 @@ unichar * uascToNum(unichar *uasc, int *val) {
  * Go through pathStack to construct the words
  * return 1 when output limit has been reached, else 0
  */
-int CFstApp::outWordsOfGraph(int depth) {
+int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
   int s;
   Fst2Tag Tag;
   unichar *suffixPtr;
@@ -2041,7 +2034,7 @@ int CFstApp::outWordsOfGraph(int depth) {
   inputPtrCnt = outputPtrCnt = 0;
   unichar aaBuffer_for_getLabelNumber[64];
   Abstract_allocator allocator=create_abstract_allocator("explore_dic_in_morpho_mode_standard",AllocatorFreeOnlyAtAllocatorDelete|AllocatorTipGrowingOftenRecycledObject,0);
-
+  
   //  fini = (tagQ[tagQidx - 1] & (SUBGRAPH_PATH_MARK | LOOP_PATH_MARK)) ?
   //    tagQ[tagQidx -1 ]:0;
   //
@@ -2050,12 +2043,26 @@ int CFstApp::outWordsOfGraph(int depth) {
   markCtlChar = markPreCtlChar = 0;
   indicateFirstUsed = 0;
   count_in_line = 0;
-  /*u_fprintf(foutput, "depth : %d\n", depth);
-  u_fprintf(foutput, "ib : ");
-  u_fputs(INPUTBUFFER, foutput);
-  u_fprintf(foutput, "\n");*/
+
+  /*for(int i = 0; i < 5; i++) {
+    if(a->states[i]->transitions != NULL) {
+      u_fprintf(foutput, ", tran->state : %d ", a->states[i]->transitions[0].state_number);
+      u_fprintf(foutput, ", tran->input : ");
+      u_fputs(a->tags[a->states[i]->transitions[0].tag_number]->input, foutput);
+      u_fprintf(foutput, "\n");
+      transition_ *t = a->states[i]->transitions[0].next;
+      while(t != NULL) {
+        u_fprintf(foutput, ", tran->state : %d ", t->state_number);
+        u_fprintf(foutput, ", tran->input : ");
+        u_fputs(a->tags[t->tag_number]->input, foutput);
+        u_fprintf(foutput, "\n");
+        t = t->next;
+      }
+    }
+  }*/
+
   //printPathStack();
-  for (s = 0; s < pathIdx; s++) {
+  for (s = currentDepth; s < pathIdx; s++) {
     inputBuffer[inputPtrCnt] = outputBuffer[outputPtrCnt] = 0;
     if (!pathStack[s].tag) {
       ep = tp = u_null_string;
@@ -2066,6 +2073,7 @@ int CFstApp::outWordsOfGraph(int depth) {
     } else {
       Tag = a->tags[pathStack[s].tag & SUB_ID_MASK];
       isWord = false;
+
       //If the input is a lexical_mask, we check the dictionaries      
       if(Tag->input[0] == '<' && Tag->input[u_strlen(Tag->input) - 1] == '>') {        
         unichar* lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
@@ -2099,25 +2107,28 @@ int CFstApp::outWordsOfGraph(int depth) {
                           foutput                      
           );
         }  
-        u_fprintf(foutput, "entriesCnt : %d\n", entriesCnt);
-        u_fprintf(foutput, "dic number : %d\n", dicCnt); 
-
         free_pattern(pattern, allocator); 
-        //free and process the entries
+        
+        //free and process the entries        
         for(int i = 0; i < maxEntriesNumber; i+=2) {
-          //TODO : process each entry to add them in the outputfile
-          
-          /*int x = u_strlen(entriesFromDic[i]);          
+          /*
+          u_fprintf(foutput, "i : %d, icnt : %d, ocnt : %d, ", i, inBufferCnt, outBufferCnt); 
+          int x = u_strlen(entriesFromDic[i]);          
           int y = u_strlen(entriesFromDic[i+1]); 
           for(int j = 0; j < x; j++) {
-            inputBuffer[inputPtrCnt++] = entriesFromDic[i][j];
+            INPUTBUFFER[inBufferCnt++] = entriesFromDic[i][j];
           }
+          INPUTBUFFER[inBufferCnt++] = '\0';
           for(int j = 0; j < y; j++) {
-            outputBuffer[outputPtrCnt++] = entriesFromDic[i+1][j];
+            OUTPUTBUFFER[outBufferCnt++] = entriesFromDic[i+1][j];
           }
-          outWordsOfGraph(depth);*/
-
+          OUTPUTBUFFER[outBufferCnt++] = '\0';
+          u_fprintf(foutput, "entries : ");
+          u_fputs(entriesFromDic[i], foutput);
+          outWordsOfGraph(s+1, depth);
+          */
           free(entriesFromDic[i]);
+          free(entriesFromDic[i+1]);
         }  
         free(entriesFromDic);
         entriesFromDic = NULL;
@@ -2305,6 +2316,7 @@ int CFstApp::outWordsOfGraph(int depth) {
             INPUTBUFFER[inBufferCnt++] = *wordPtr;
             if ((automateMode == TRANMODE) && (prMode
                 == PR_SEPARATION)) {
+              u_fprintf(foutput, "TRANMODE & PR_SEPARATION \n");
               OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
             }
             wordPtr++;
@@ -2322,6 +2334,7 @@ int CFstApp::outWordsOfGraph(int depth) {
           wordPtr = closingQuote;
           while (*wordPtr) {
             if (automateMode == TRANMODE) {
+              u_fprintf(foutput, "TRANMODE & PR_SEPARATION 2 \n");
               outputBuffer[outputPtrCnt++] = *wordPtr;
               if (prMode == PR_SEPARATION) {
                 inputBuffer[inputPtrCnt++] = *wordPtr;
