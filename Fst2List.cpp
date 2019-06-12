@@ -484,6 +484,30 @@ public:
   }*cycInfos;
 
   /**
+   * structure to hold all the encoutered lexical mask
+   */
+  struct LexicalMask {
+    unichar* input;     //lexical mask's input
+    unichar* output;    //lexical mask's output
+  };
+
+  /**
+   * structure to represent the entries extracted from bin dictionaries
+   */
+  struct DicEntry {
+    unichar* input;         //original input extracted from dic
+    unichar* output;        //original output extracted from dic
+    unichar* finalInput;    //final input extracted from dic when the inf output is applied
+    unichar* finalOutput;   //final output extracted from dic when the inf output is applied
+  };
+
+  struct ProcessedLexicalMask {
+      LexicalMask lexical_mask;   //represents the lexical mask by the corresponding input and the output
+      DicEntry *entries;          //represents the box's content by all the extracted entries
+      unichar *subGraphName;      //subgraphName to call when this lexical_mask is encoutered 
+  };
+
+  /**
    * structure to hold
    * cycle information
    */
@@ -778,10 +802,7 @@ public:
   unichar OUTPUTBUFFER[4096]; // buffer used to print the box outputs
   int inBufferCnt;            // buffer counter for box inputs
   int outBufferCnt;           // buffer counter for box outputs
-  
-  unichar **entriesFromDic;
-  int maxEntriesNumber = 64;  // max number of words in entriesFromDic
-  int entriesCnt;             // number of words in entriesFromDic
+         
 
   void resetBufferCounters() {
      inputPtrCnt = outputPtrCnt = inBufferCnt = outBufferCnt = 0;
@@ -1273,50 +1294,38 @@ public:
     }
   } 
 
-void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int offset, unichar inflected[], int pos_in_inflected, 
-                      int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, U_FILE* f) {
-  int final,n_transitions,inf_number;
-  int z=save_output(ustr);
-  bool match;
-  offset=read_dictionary_state(d,offset,&final,&n_transitions,&inf_number);
-  if (final) {
-    //If the current state is final, uncompress the entry to obtain the label and compare the pattern with the result of uncompress
-    inflected[pos_in_inflected] = '\0';     
-    struct list_ustring* tmp = d->inf->codes[inf_number];
-    uncompress_entry(inflected, tmp->string, line_buffer);   
-    struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
-    match = is_entry_compatible_with_pattern(dela_entry, pattern);
+  void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int offset, unichar inflected[], int pos_in_inflected, 
+                        int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, U_FILE* f) {
+    int final,n_transitions,inf_number;
+    int z=save_output(ustr);
+    bool match;
+    offset=read_dictionary_state(d,offset,&final,&n_transitions,&inf_number);
+    if (final) {
+      //If the current state is final, uncompress the entry to obtain the label and compare the pattern with the result of uncompress
+      inflected[pos_in_inflected] = '\0';     
+      struct list_ustring* tmp = d->inf->codes[inf_number];
+      uncompress_entry(inflected, tmp->string, line_buffer);   
+      struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
+      match = is_entry_compatible_with_pattern(dela_entry, pattern);
 
-    if(match == 1) {
-      if(entriesCnt >= maxEntriesNumber - 2) {
-        //realloc
-        entriesFromDic = (unichar **)realloc(entriesFromDic, maxEntriesNumber * 2 * sizeof(unichar*));
-        if(entriesFromDic == NULL) 
-          fatal_error("Realloc error in extract_entries_from_dic");
-        for(int i = maxEntriesNumber; i < maxEntriesNumber * 2; i++) {
-          entriesFromDic[i] = (unichar*)malloc(sizeof(unichar) * 512);
-          if(entriesFromDic[i] == NULL) 
-            fatal_error("Malloc error in extract_entries_from_dic");
-        }
-        maxEntriesNumber *= 2;
-        //end of realloc
+      if(match == 1) {
+        u_fprintf(f, "inflected : ");
+        u_fputs(inflected, f);
+        u_fprintf(f, "\n");
       }
-      u_strcpy(entriesFromDic[entriesCnt++], inflected);
-      u_strcpy(entriesFromDic[entriesCnt++], line_buffer->str);
+      free_dela_entry(dela_entry, allocator);
     }
-    free_dela_entry(dela_entry, allocator);
+    unichar c;
+    int adr;
+    for (int i = 0; i < n_transitions; i++) {  
+      //if the current state is not final, explore all the outgoing transitions    
+      update_last_position(p, pos_offset);
+      offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
+      inflected[pos_in_inflected] = c;       
+      extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, f);
+      restore_output(z,ustr);
+    }
   }
-  unichar c;
-  int adr;
-  for (int i = 0; i < n_transitions; i++) {  
-    //if the current state is not final, explore all the outgoing transitions    
-    update_last_position(p, pos_offset);
-    offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
-    inflected[pos_in_inflected] = c;       
-    extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, f);
-    restore_output(z,ustr);
-  }
-}
 
 private:
   /* prevent GCC warning */
@@ -2025,7 +2034,7 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
   unichar *ep; //input buffer ptr
   unichar *tp; //transducer buffer ptr
   unichar *chp;
-  unichar inflected[512];
+  unichar inflected[1024];
   int indicateFirstUsed;
   int i;
   int markCtlChar, markPreCtlChar;
@@ -2074,25 +2083,18 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
       Tag = a->tags[pathStack[s].tag & SUB_ID_MASK];
       isWord = false;
 
-      //If the input is a lexical_mask, we check the dictionaries      
-      if(Tag->input[0] == '<' && Tag->input[u_strlen(Tag->input) - 1] == '>') {        
+      //If the input is a lexical_mask, we check the dictionaries   
+      if(Tag->input[0] == '<' && Tag->input[u_strlen(Tag->input) - 1] == '>') {   
+        u_fprintf(foutput, "lexical mask!\n");     
         unichar* lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
         u_strcpy(lexical_mask, Tag->input);
         lexical_mask[u_strlen(lexical_mask) -1] = '\0';
         lexical_mask++;        
         struct pattern* pattern = build_pattern(lexical_mask, NULL, 0, allocator);    
-        //Allocation
-        entriesFromDic = (unichar**)malloc(sizeof(unichar*) * maxEntriesNumber);
-        if(entriesFromDic == NULL) 
-          fatal_error("Realloc error in outWordsOfGraph");
-        for(int i = 0; i < maxEntriesNumber; i++) {
-          entriesFromDic[i] = (unichar*)malloc(sizeof(unichar) * 512);
-          if(entriesFromDic[i] == NULL) 
-            fatal_error("Malloc error in outWordsOfGraph");
-        }    
-        //End of allocation  
-        entriesCnt = 0;
-        for(int i = 0; i < dicCnt; i++) {          
+        //number of lines in the INF file :  p->morpho_dic[0]->inf->N; INF file type : INF_codes in LoadInf.cpp
+
+        for(int i = 0; i < dicCnt; i++) {         
+          //extract all the entries matching the lexical_mask         
           extract_entries_from_dic(
                           p,
                           p->morpho_dic[i],
@@ -2107,32 +2109,7 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
                           foutput                      
           );
         }  
-        free_pattern(pattern, allocator); 
-        
-        //free and process the entries        
-        for(int i = 0; i < maxEntriesNumber; i+=2) {
-          /*
-          u_fprintf(foutput, "i : %d, icnt : %d, ocnt : %d, ", i, inBufferCnt, outBufferCnt); 
-          int x = u_strlen(entriesFromDic[i]);          
-          int y = u_strlen(entriesFromDic[i+1]); 
-          for(int j = 0; j < x; j++) {
-            INPUTBUFFER[inBufferCnt++] = entriesFromDic[i][j];
-          }
-          INPUTBUFFER[inBufferCnt++] = '\0';
-          for(int j = 0; j < y; j++) {
-            OUTPUTBUFFER[outBufferCnt++] = entriesFromDic[i+1][j];
-          }
-          OUTPUTBUFFER[outBufferCnt++] = '\0';
-          u_fprintf(foutput, "entries : ");
-          u_fputs(entriesFromDic[i], foutput);
-          outWordsOfGraph(s+1, depth);
-          */
-          free(entriesFromDic[i]);
-          free(entriesFromDic[i+1]);
-        }  
-        free(entriesFromDic);
-        entriesFromDic = NULL;
-        //end of free     
+        free_pattern(pattern, allocator);  
       }
 
       //Checks if the current node is a morphological begin or end and updates the boolean to begin/stop the morph mode
