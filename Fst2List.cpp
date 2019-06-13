@@ -497,14 +497,14 @@ public:
   struct DicEntry {
     unichar* input;         //original input extracted from dic
     unichar* output;        //original output extracted from dic
-    unichar* finalInput;    //final input extracted from dic when the inf output is applied
-    unichar* finalOutput;   //final output extracted from dic when the inf output is applied
   };
 
   struct ProcessedLexicalMask {
       LexicalMask lexical_mask;   //represents the lexical mask by the corresponding input and the output
       DicEntry *entries;          //represents the box's content by all the extracted entries
       unichar *subGraphName;      //subgraphName to call when this lexical_mask is encoutered 
+      int maxEntriesCnt;
+      int entriesCnt;
   };
 
   /**
@@ -802,7 +802,10 @@ public:
   unichar OUTPUTBUFFER[4096]; // buffer used to print the box outputs
   int inBufferCnt;            // buffer counter for box inputs
   int outBufferCnt;           // buffer counter for box outputs
-         
+
+  ProcessedLexicalMask *processedLexicalMasks;
+  int lexicalMaskCnt;
+  int maxLexicalMaskCnt = 8;      
 
   void resetBufferCounters() {
      inputPtrCnt = outputPtrCnt = inBufferCnt = outBufferCnt = 0;
@@ -1294,8 +1297,17 @@ public:
     }
   } 
 
+  int isProcessedLexicalMask(unichar* lexical_mask, unichar* output, U_FILE* f) {
+    for(int i = 0; i < lexicalMaskCnt; i++) {
+      if(!u_strcmp(lexical_mask, processedLexicalMasks[i].lexical_mask.input) && !u_strcmp(output, processedLexicalMasks[i].lexical_mask.output)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
   void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int offset, unichar inflected[], int pos_in_inflected, 
-                        int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, U_FILE* f) {
+                        int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, int index, U_FILE* f) {
     int final,n_transitions,inf_number;
     int z=save_output(ustr);
     bool match;
@@ -1308,10 +1320,29 @@ public:
       struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
       match = is_entry_compatible_with_pattern(dela_entry, pattern);
 
-      if(match == 1) {
-        u_fprintf(f, "inflected : ");
-        u_fputs(inflected, f);
-        u_fprintf(f, "\n");
+      if(match == 1) { 
+        unichar* rest = line_buffer->str; 
+        unichar delimiter[2] = {(unichar)',', (unichar)'\0'};
+
+        if(processedLexicalMasks[index].entriesCnt >= processedLexicalMasks[index].maxEntriesCnt) {
+          processedLexicalMasks[index].entries = (DicEntry*)realloc(processedLexicalMasks[index].entries, processedLexicalMasks[index].maxEntriesCnt * 2 * sizeof(DicEntry));
+          if(processedLexicalMasks[index].entries == NULL) {
+            error("Realloc error in extract_entries_from_dic for entry num : %d, max : %d in index : %d.",processedLexicalMasks[index].entriesCnt, processedLexicalMasks[index].maxEntriesCnt, index);
+          }
+          processedLexicalMasks[index].maxEntriesCnt *= 2;
+        }
+        processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input = u_strtok_r(rest, delimiter, &rest);
+        //processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input = u_strdup(token);
+        processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].output = u_strtok_r(rest, delimiter, &rest);
+        //processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].output = u_strdup(token);       
+        
+        /*u_fprintf(f, "input : ", processedLexicalMasks[index].entriesCnt);
+        u_fputs(processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input, f);  
+        u_fprintf(f, ",");  
+        u_fprintf(f, "output : ");
+        u_fputs(processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].output, f); 
+        u_fprintf(f, ".\n");*/ 
+        processedLexicalMasks[index].entriesCnt++; 
       }
       free_dela_entry(dela_entry, allocator);
     }
@@ -1322,7 +1353,7 @@ public:
       update_last_position(p, pos_offset);
       offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
       inflected[pos_in_inflected] = c;       
-      extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, f);
+      extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, index, f);
       restore_output(z,ustr);
     }
   }
@@ -1497,6 +1528,10 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
   loadGraph(changeStrToIdx, changeStrTo, fname);
   resetCounters();
   ofNameTmp[0] = 0;
+  processedLexicalMasks = (ProcessedLexicalMask*)malloc(sizeof(ProcessedLexicalMask) * maxLexicalMaskCnt); //TODO : realloc
+  if(processedLexicalMasks == NULL) {
+    fatal_error("Malloc error in getWordsFromGraph for processedLexicalMasks");
+  }
   switch (display_control) {
   case GRAPH: {    // explore each graph separately
     if (enableLoopCheck) {
@@ -2043,7 +2078,7 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
   inputPtrCnt = outputPtrCnt = 0;
   unichar aaBuffer_for_getLabelNumber[64];
   Abstract_allocator allocator=create_abstract_allocator("explore_dic_in_morpho_mode_standard",AllocatorFreeOnlyAtAllocatorDelete|AllocatorTipGrowingOftenRecycledObject,0);
-  
+  struct pattern* pattern;
   //  fini = (tagQ[tagQidx - 1] & (SUBGRAPH_PATH_MARK | LOOP_PATH_MARK)) ?
   //    tagQ[tagQidx -1 ]:0;
   //
@@ -2084,32 +2119,65 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
       isWord = false;
 
       //If the input is a lexical_mask, we check the dictionaries   
-      if(Tag->input[0] == '<' && Tag->input[u_strlen(Tag->input) - 1] == '>') {   
-        u_fprintf(foutput, "lexical mask!\n");     
+      if(Tag->input[0] == '<' && Tag->input[u_strlen(Tag->input) - 1] == '>') {       
         unichar* lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
         u_strcpy(lexical_mask, Tag->input);
         lexical_mask[u_strlen(lexical_mask) -1] = '\0';
-        lexical_mask++;        
-        struct pattern* pattern = build_pattern(lexical_mask, NULL, 0, allocator);    
+        lexical_mask++;  
+        
         //number of lines in the INF file :  p->morpho_dic[0]->inf->N; INF file type : INF_codes in LoadInf.cpp
 
-        for(int i = 0; i < dicCnt; i++) {         
-          //extract all the entries matching the lexical_mask         
-          extract_entries_from_dic(
-                          p,
-                          p->morpho_dic[i],
-                          p->morpho_dic[i]->initial_state_offset,
-                          inflected, 
-                          0, 
-                          0, 
-                          new_Ustring(), 
-                          new_Ustring(), 
-                          pattern,
-                          allocator,
-                          foutput                      
-          );
+        //Check if the lexical mask is already encoutered
+        int index = isProcessedLexicalMask(lexical_mask, Tag->output, foutput);
+        if(index >= 0) {
+          //The current lexical mask is already processed
+          u_fputs(lexical_mask, foutput);
+          u_fprintf(foutput, " already existing lexical mask at index : %d!! \n", index);    
+          //TODO     
+        } 
+        else {
+          //This lexical mask is not already processed, so we have to explore each binary dictionary to create a subgraph
+          if(Tag->output != NULL) {
+            processedLexicalMasks[lexicalMaskCnt].lexical_mask.output = u_strdup(Tag->output);
+          }
+          else {
+            processedLexicalMasks[lexicalMaskCnt].lexical_mask.output = NULL;
+          }
+          if(lexicalMaskCnt >= maxLexicalMaskCnt) {
+            processedLexicalMasks = (ProcessedLexicalMask*)realloc(processedLexicalMasks, sizeof(ProcessedLexicalMask) * maxLexicalMaskCnt * 2);
+            if(processedLexicalMasks == NULL)
+              fatal_error("Realloc error in outWordsOfGraph for processedLexicalMasks");
+            maxLexicalMaskCnt *= 2;
+          }
+          processedLexicalMasks[lexicalMaskCnt].lexical_mask.input = u_strdup(lexical_mask);     
+          u_printf("added to index %d \n", lexicalMaskCnt);
+          processedLexicalMasks[lexicalMaskCnt].maxEntriesCnt = 64;
+          processedLexicalMasks[lexicalMaskCnt].entriesCnt = 0;
+          processedLexicalMasks[lexicalMaskCnt].entries = (DicEntry*)malloc(sizeof(DicEntry) * processedLexicalMasks[lexicalMaskCnt].maxEntriesCnt);
+          processedLexicalMasks[lexicalMaskCnt].subGraphName = NULL; // TODO
+
+          pattern = build_pattern(lexical_mask, NULL, 0, allocator);    
+          for(int i = 0; i < dicCnt; i++) {         
+            //extract all the entries matching the lexical_mask         
+            extract_entries_from_dic(
+                            p,
+                            p->morpho_dic[i],
+                            p->morpho_dic[i]->initial_state_offset,
+                            inflected, 
+                            0, 
+                            0, 
+                            new_Ustring(), 
+                            new_Ustring(), 
+                            pattern,
+                            allocator,
+                            lexicalMaskCnt,
+                            foutput                      
+            );
+          }  
+          free_pattern(pattern, allocator);
+          lexicalMaskCnt++;
+          //TODO
         }  
-        free_pattern(pattern, allocator);  
       }
 
       //Checks if the current node is a morphological begin or end and updates the boolean to begin/stop the morph mode
