@@ -495,16 +495,17 @@ public:
    * structure to represent the entries extracted from bin dictionaries
    */
   struct DicEntry {
-    unichar* input;         //original input extracted from dic
-    unichar* output;        //original output extracted from dic
+    unichar* input;         //input extracted from dic
+    unichar* output;        //output extracted from inf file
   };
 
   struct ProcessedLexicalMask {
       LexicalMask lexical_mask;   //represents the lexical mask by the corresponding input and the output
       DicEntry *entries;          //represents the box's content by all the extracted entries
       unichar *subGraphName;      //subgraphName to call when this lexical_mask is encoutered 
-      int maxEntriesCnt;
-      int entriesCnt;
+      int maxEntriesCnt;          //max number of entries in entries array, usefull to reallocation
+      int entriesCnt;             //number of entries in the array
+      Fst2 *subGraph;              //subGraph to call when this lexical mask is found
   };
 
   /**
@@ -1311,6 +1312,7 @@ public:
     int final,n_transitions,inf_number;
     int z=save_output(ustr);
     bool match;
+    unichar* token;
     offset=read_dictionary_state(d,offset,&final,&n_transitions,&inf_number);
     if (final) {
       //If the current state is final, uncompress the entry to obtain the label and compare the pattern with the result of uncompress
@@ -1331,17 +1333,17 @@ public:
           }
           processedLexicalMasks[index].maxEntriesCnt *= 2;
         }
-        processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input = u_strtok_r(rest, delimiter, &rest);
-        //processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input = u_strdup(token);
-        processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].output = u_strtok_r(rest, delimiter, &rest);
-        //processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].output = u_strdup(token);       
+        token = u_strtok_r(rest, delimiter, &rest);
+        processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input = u_strdup(token);
+        token = u_strtok_r(rest, delimiter, &rest);
+        processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].output = u_strdup(token);       
         
-        /*u_fprintf(f, "input : ", processedLexicalMasks[index].entriesCnt);
+        /*u_fprintf(f, "i : %d, input : ", processedLexicalMasks[index].entriesCnt);
         u_fputs(processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input, f);  
         u_fprintf(f, ",");  
         u_fprintf(f, "output : ");
         u_fputs(processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].output, f); 
-        u_fprintf(f, ".\n");*/ 
+        u_fprintf(f, ".\n");*/
         processedLexicalMasks[index].entriesCnt++; 
       }
       free_dela_entry(dela_entry, allocator);
@@ -2088,7 +2090,15 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
   indicateFirstUsed = 0;
   count_in_line = 0;
 
-  /*for(int i = 0; i < 5; i++) {
+  
+  /*u_fprintf(foutput, " subgrf : %d\n", a->number_of_graphs);
+  u_fprintf(foutput, " states : %d\n", a->number_of_states);
+  u_fprintf(foutput, " tags : %d\n", a->number_of_tags);
+  u_fprintf(foutput, " state per subgraph : %d\n", a->number_of_states_per_graphs[1]);
+  u_fprintf(foutput, " initial states : %d\n", a->initial_states[1]);*/
+  
+  /*for(int i = 0; i < a->number_of_states; i++) {
+    u_fprintf(foutput, ", STATE : %d -> \n", i);
     if(a->states[i]->transitions != NULL) {
       u_fprintf(foutput, ", tran->state : %d ", a->states[i]->transitions[0].state_number);
       u_fprintf(foutput, ", tran->input : ");
@@ -2103,6 +2113,24 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
         t = t->next;
       }
     }
+  }*/
+  /*for(int i = 0; i < a->number_of_states; i++) {
+    if(a->states[i] != NULL) {
+      u_fprintf(foutput, "state : %d not null", i);
+      Transition *tmp = a->states[i]->transitions;
+      while(tmp != NULL) {
+        u_fprintf(foutput, "tmp->tag_number : %d ", tmp->tag_number);
+        tmp = tmp->next;
+      }
+      u_fprintf(foutput, "\n");
+    }
+  }
+  for(int i = 0; i < a->number_of_tags; i++) {
+    if(a->tags[i] != NULL) {
+      u_fprintf(foutput, "tag %d not null, input : ", i);
+      u_fputs(a->tags[i]->input, foutput);
+    }
+    u_fprintf(foutput, "\n");
   }*/
 
   //printPathStack();
@@ -2132,29 +2160,43 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
         if(index >= 0) {
           //The current lexical mask is already processed
           u_fputs(lexical_mask, foutput);
-          u_fprintf(foutput, " already existing lexical mask at index : %d!! \n", index);    
+          u_fprintf(foutput, " already existing lexical mask at index : %d\n", index);    
           //TODO     
         } 
         else {
           //This lexical mask is not already processed, so we have to explore each binary dictionary to create a subgraph
-          if(Tag->output != NULL) {
-            processedLexicalMasks[lexicalMaskCnt].lexical_mask.output = u_strdup(Tag->output);
-          }
-          else {
-            processedLexicalMasks[lexicalMaskCnt].lexical_mask.output = NULL;
-          }
           if(lexicalMaskCnt >= maxLexicalMaskCnt) {
             processedLexicalMasks = (ProcessedLexicalMask*)realloc(processedLexicalMasks, sizeof(ProcessedLexicalMask) * maxLexicalMaskCnt * 2);
             if(processedLexicalMasks == NULL)
               fatal_error("Realloc error in outWordsOfGraph for processedLexicalMasks");
             maxLexicalMaskCnt *= 2;
           }
-          processedLexicalMasks[lexicalMaskCnt].lexical_mask.input = u_strdup(lexical_mask);     
-          u_printf("added to index %d \n", lexicalMaskCnt);
+          processedLexicalMasks[lexicalMaskCnt].lexical_mask.input = u_strdup(lexical_mask);
           processedLexicalMasks[lexicalMaskCnt].maxEntriesCnt = 64;
           processedLexicalMasks[lexicalMaskCnt].entriesCnt = 0;
+          if(Tag->output != NULL) {
+            processedLexicalMasks[lexicalMaskCnt].lexical_mask.output = u_strdup(Tag->output);
+            processedLexicalMasks[lexicalMaskCnt].subGraphName = (unichar*)malloc(sizeof(unichar) * 
+                                                              ((int)u_strlen(processedLexicalMasks[lexicalMaskCnt].lexical_mask.input) + 
+                                                              (int)u_strlen(processedLexicalMasks[lexicalMaskCnt].lexical_mask.output)) + 1);
+            if(processedLexicalMasks[lexicalMaskCnt].subGraphName == NULL) {
+              fatal_error("Malloc error in outWordsOfGraph for subGraphName");
+            }   
+            u_sprintf(processedLexicalMasks[lexicalMaskCnt].subGraphName,":%s%s", processedLexicalMasks[lexicalMaskCnt].lexical_mask.input,
+            processedLexicalMasks[lexicalMaskCnt].lexical_mask.output);
+          }
+          else {
+            processedLexicalMasks[lexicalMaskCnt].lexical_mask.output = NULL;
+            processedLexicalMasks[lexicalMaskCnt].subGraphName = (unichar*)malloc(sizeof(unichar) * s + 1);
+            if(processedLexicalMasks[lexicalMaskCnt].subGraphName == NULL) {
+              fatal_error("Malloc error in outWordsOfGraph for subGraphName");
+            }   
+            u_sprintf(processedLexicalMasks[lexicalMaskCnt].subGraphName,":%s", processedLexicalMasks[lexicalMaskCnt].lexical_mask.input);
+          }            
           processedLexicalMasks[lexicalMaskCnt].entries = (DicEntry*)malloc(sizeof(DicEntry) * processedLexicalMasks[lexicalMaskCnt].maxEntriesCnt);
-          processedLexicalMasks[lexicalMaskCnt].subGraphName = NULL; // TODO
+          if(processedLexicalMasks[lexicalMaskCnt].entries == NULL) {
+            fatal_error("Malloc error in outWordsOfGraph for entries");
+          }        
 
           pattern = build_pattern(lexical_mask, NULL, 0, allocator);    
           for(int i = 0; i < dicCnt; i++) {         
@@ -2175,9 +2217,63 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
             );
           }  
           free_pattern(pattern, allocator);
+          
+          processedLexicalMasks[lexicalMaskCnt].subGraph = new_Fst2(allocator);
+          processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_graphs = 1;
+          processedLexicalMasks[lexicalMaskCnt].subGraph->states = (Fst2State*)malloc(sizeof(Fst2State) * 2);
+          processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states_per_graphs = (int*)malloc(sizeof(int) * 2);
+          processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states_per_graphs[1] = 2;
+          processedLexicalMasks[lexicalMaskCnt].subGraph->states[0] = new_Fst2State(allocator);
+          set_initial_state(processedLexicalMasks[lexicalMaskCnt].subGraph->states[0], 1);
+          processedLexicalMasks[lexicalMaskCnt].subGraph->initial_states = (int*)malloc(sizeof(int) * 2);
+          processedLexicalMasks[lexicalMaskCnt].subGraph->initial_states[1] = 0;
+          processedLexicalMasks[lexicalMaskCnt].subGraph->states[1] = new_Fst2State(allocator);
+          processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states = 2;
+          processedLexicalMasks[lexicalMaskCnt].subGraph->graph_names = (unichar**)malloc(sizeof(unichar*) * 2);
+          processedLexicalMasks[lexicalMaskCnt].subGraph->graph_names[1] = u_strdup(processedLexicalMasks[lexicalMaskCnt].subGraphName);           
+          processedLexicalMasks[lexicalMaskCnt].subGraph->tags = (Fst2Tag*)malloc(sizeof(Fst2Tag) * processedLexicalMasks[lexicalMaskCnt].entriesCnt);
+          for(int i = 0; i < processedLexicalMasks[lexicalMaskCnt].entriesCnt; i++) {
+            processedLexicalMasks[lexicalMaskCnt].subGraph->tags[i] = new_Fst2Tag(allocator);  
+            processedLexicalMasks[lexicalMaskCnt].subGraph->tags[i]->input = u_strdup(processedLexicalMasks[lexicalMaskCnt].entries[i].input);
+            add_transition_to_state(processedLexicalMasks[lexicalMaskCnt].subGraph->states[0], i, 1, allocator);
+            processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_tags++;          
+          }
+          set_final_state(processedLexicalMasks[lexicalMaskCnt].subGraph->states[1], 1);
+          
+          u_fprintf(foutput, "subgrf : %d\n", processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_graphs);
+          u_fprintf(foutput, "states : %d\n", processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states);
+          u_fprintf(foutput, "tags : %d\n", processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_tags);
+          u_fprintf(foutput, "state per subgraph : %d\n", processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states_per_graphs[1]);
+          u_fprintf(foutput, "initial_states : %d\n", processedLexicalMasks[lexicalMaskCnt].subGraph->initial_states[1]);
+          u_fprintf(foutput, "name : ");       
+          u_fputs(processedLexicalMasks[lexicalMaskCnt].subGraph->graph_names[1], foutput);
+          u_fprintf(foutput, "\n"); 
+
+          for(int i = 0; i < processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states; i++) {
+            if(processedLexicalMasks[lexicalMaskCnt].subGraph->states[i] != NULL) {
+              u_fprintf(foutput, "state : %d not null, ", i);
+              Transition *tmp = processedLexicalMasks[lexicalMaskCnt].subGraph->states[i]->transitions;
+              while(tmp != NULL) {
+                u_fprintf(foutput, "tmp->tag_number : %d ", tmp->tag_number);
+                tmp = tmp->next;
+              }
+              u_fprintf(foutput, "\n");
+            }
+          }
+          for(int i = 0; i < processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_tags; i++) {
+            if(processedLexicalMasks[lexicalMaskCnt].subGraph->tags[i] != NULL) {
+              u_fprintf(foutput, "tag %d not null, input : ", i);
+              u_fputs(processedLexicalMasks[lexicalMaskCnt].subGraph->tags[i]->input, foutput);
+            }
+            u_fprintf(foutput, "\n");
+          } 
+
+          //il ya deux masques lexicaux donc deux fichiers, <V> matche rien du tout donc attention bordel! il faut les mettre dans deux fichiers                   
+          save_Fst2(&vec, "/home/2in01/dbiguene/Documents/Stage/French/.fst2", processedLexicalMasks[lexicalMaskCnt].subGraph);  
+          fatal_error("t");    
           lexicalMaskCnt++;
-          //TODO
         }  
+        u_fprintf(foutput, "END of lexical_mask processing\n");
       }
 
       //Checks if the current node is a morphological begin or end and updates the boolean to begin/stop the morph mode
