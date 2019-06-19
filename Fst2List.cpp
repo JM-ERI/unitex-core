@@ -1811,7 +1811,6 @@ int CFstApp::exploreSubgraphRecursively(int stackStateID, int autoDepth, int sta
     //    }
     return 0;
   }
-
   if (is_final_state(a->states[stateNo])) { // terminal node
     if (autoDepth != 1) { // check continue condition
       skipCnt = 0; // find next state
@@ -1829,7 +1828,6 @@ int CFstApp::exploreSubgraphRecursively(int stackStateID, int autoDepth, int sta
           }
         }
       }
-
       if (i == 0) {
         error("unwanted state happened");
         return 1;
@@ -1863,7 +1861,6 @@ int CFstApp::exploreSubgraphRecursively(int stackStateID, int autoDepth, int sta
       }
     }
   } // end if terminal node
-
   for (Transition *trans = a->states[stateNo]->transitions; trans != 0; trans = trans->next) {
     if (trans->tag_number & STOP_PATH_MARK) {
       if (listOut) {
@@ -2089,65 +2086,24 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
   markCtlChar = markPreCtlChar = 0;
   indicateFirstUsed = 0;
   count_in_line = 0;
-
-  
-  /*u_fprintf(foutput, " subgrf : %d\n", a->number_of_graphs);
-  u_fprintf(foutput, " states : %d\n", a->number_of_states);
-  u_fprintf(foutput, " tags : %d\n", a->number_of_tags);
-  u_fprintf(foutput, " state per subgraph : %d\n", a->number_of_states_per_graphs[1]);
-  u_fprintf(foutput, " initial states : %d\n", a->initial_states[1]);*/
-  
-  /*for(int i = 0; i < a->number_of_states; i++) {
-    u_fprintf(foutput, ", STATE : %d -> \n", i);
-    if(a->states[i]->transitions != NULL) {
-      u_fprintf(foutput, ", tran->state : %d ", a->states[i]->transitions[0].state_number);
-      u_fprintf(foutput, ", tran->input : ");
-      u_fputs(a->tags[a->states[i]->transitions[0].tag_number]->input, foutput);
-      u_fprintf(foutput, "\n");
-      transition_ *t = a->states[i]->transitions[0].next;
-      while(t != NULL) {
-        u_fprintf(foutput, ", tran->state : %d ", t->state_number);
-        u_fprintf(foutput, ", tran->input : ");
-        u_fputs(a->tags[t->tag_number]->input, foutput);
-        u_fprintf(foutput, "\n");
-        t = t->next;
-      }
-    }
-  }*/
-  /*for(int i = 0; i < a->number_of_states; i++) {
-    if(a->states[i] != NULL) {
-      u_fprintf(foutput, "state : %d not null", i);
-      Transition *tmp = a->states[i]->transitions;
-      while(tmp != NULL) {
-        u_fprintf(foutput, "tmp->tag_number : %d ", tmp->tag_number);
-        tmp = tmp->next;
-      }
-      u_fprintf(foutput, "\n");
-    }
-  }
-  for(int i = 0; i < a->number_of_tags; i++) {
-    if(a->tags[i] != NULL) {
-      u_fprintf(foutput, "tag %d not null, input : ", i);
-      u_fputs(a->tags[i]->input, foutput);
-    }
-    u_fprintf(foutput, "\n");
-  }*/
-
+  u_fprintf(foutput, "currentDepth : %d, depth : %d\n", currentDepth, depth);
   //printPathStack();
   for (s = currentDepth; s < pathIdx; s++) {
     inputBuffer[inputPtrCnt] = outputBuffer[outputPtrCnt] = 0;
     if (!pathStack[s].tag) {
+      u_fprintf(foutput, "no tag in state : %d\n", pathStack[s].stateNo);
       ep = tp = u_null_string;
     } else if (pathStack[s].tag & SUBGRAPH_PATH_MARK) {
       ep = (display_control == GRAPH) ? 
         (unichar *) a->graph_names[pathStack[s].tag & SUB_ID_MASK] : u_null_string;
       tp = u_null_string;
     } else {
+      u_fprintf(foutput, "normal tag in state :%d\n", pathStack[s].stateNo);
       Tag = a->tags[pathStack[s].tag & SUB_ID_MASK];
       isWord = false;
 
       //If the input is a lexical_mask, we check the dictionaries   
-      if(Tag->input[0] == '<' && Tag->input[u_strlen(Tag->input) - 1] == '>') {       
+      if(Tag->input[0] == '<' && Tag->input[u_strlen(Tag->input) - 1] == '>') {      
         unichar* lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
         u_strcpy(lexical_mask, Tag->input);
         lexical_mask[u_strlen(lexical_mask) -1] = '\0';
@@ -2163,6 +2119,7 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
           u_fprintf(foutput, " already existing lexical mask at index : %d\n", index);    
           //TODO     
         } 
+
         else {
           //This lexical mask is not already processed, so we have to explore each binary dictionary to create a subgraph
           if(lexicalMaskCnt >= maxLexicalMaskCnt) {
@@ -2218,60 +2175,73 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
           }  
           free_pattern(pattern, allocator);
           
-          processedLexicalMasks[lexicalMaskCnt].subGraph = new_Fst2(allocator);
-          processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_graphs = 1;
-          processedLexicalMasks[lexicalMaskCnt].subGraph->states = (Fst2State*)malloc(sizeof(Fst2State) * 2);
-          processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states_per_graphs = (int*)malloc(sizeof(int) * 2);
-          processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states_per_graphs[1] = 2;
-          processedLexicalMasks[lexicalMaskCnt].subGraph->states[0] = new_Fst2State(allocator);
-          set_initial_state(processedLexicalMasks[lexicalMaskCnt].subGraph->states[0], 1);
-          processedLexicalMasks[lexicalMaskCnt].subGraph->initial_states = (int*)malloc(sizeof(int) * 2);
-          processedLexicalMasks[lexicalMaskCnt].subGraph->initial_states[1] = 0;
-          processedLexicalMasks[lexicalMaskCnt].subGraph->states[1] = new_Fst2State(allocator);
-          processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states = 2;
-          processedLexicalMasks[lexicalMaskCnt].subGraph->graph_names = (unichar**)malloc(sizeof(unichar*) * 2);
-          processedLexicalMasks[lexicalMaskCnt].subGraph->graph_names[1] = u_strdup(processedLexicalMasks[lexicalMaskCnt].subGraphName);           
-          processedLexicalMasks[lexicalMaskCnt].subGraph->tags = (Fst2Tag*)malloc(sizeof(Fst2Tag) * processedLexicalMasks[lexicalMaskCnt].entriesCnt);
-          for(int i = 0; i < processedLexicalMasks[lexicalMaskCnt].entriesCnt; i++) {
-            processedLexicalMasks[lexicalMaskCnt].subGraph->tags[i] = new_Fst2Tag(allocator);  
-            processedLexicalMasks[lexicalMaskCnt].subGraph->tags[i]->input = u_strdup(processedLexicalMasks[lexicalMaskCnt].entries[i].input);
-            add_transition_to_state(processedLexicalMasks[lexicalMaskCnt].subGraph->states[0], i, 1, allocator);
-            processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_tags++;          
+          //Creation of subgraph         
+          a->number_of_graphs += 1;
+          a->graph_names = (unichar**)realloc(a->graph_names, sizeof(unichar*) * (a->number_of_graphs + 1));
+          if(a->graph_names == NULL) {
+            fatal_error("Realloc error for graph names");
           }
-          set_final_state(processedLexicalMasks[lexicalMaskCnt].subGraph->states[1], 1);
+          a->graph_names[a->number_of_graphs] = u_strdup(processedLexicalMasks[lexicalMaskCnt].subGraphName);  
           
-          u_fprintf(foutput, "subgrf : %d\n", processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_graphs);
-          u_fprintf(foutput, "states : %d\n", processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states);
-          u_fprintf(foutput, "tags : %d\n", processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_tags);
-          u_fprintf(foutput, "state per subgraph : %d\n", processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states_per_graphs[1]);
-          u_fprintf(foutput, "initial_states : %d\n", processedLexicalMasks[lexicalMaskCnt].subGraph->initial_states[1]);
-          u_fprintf(foutput, "name : ");       
-          u_fputs(processedLexicalMasks[lexicalMaskCnt].subGraph->graph_names[1], foutput);
-          u_fprintf(foutput, "\n"); 
-
-          for(int i = 0; i < processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_states; i++) {
-            if(processedLexicalMasks[lexicalMaskCnt].subGraph->states[i] != NULL) {
-              u_fprintf(foutput, "state : %d not null, ", i);
-              Transition *tmp = processedLexicalMasks[lexicalMaskCnt].subGraph->states[i]->transitions;
-              while(tmp != NULL) {
-                u_fprintf(foutput, "tmp->tag_number : %d ", tmp->tag_number);
-                tmp = tmp->next;
-              }
-              u_fprintf(foutput, "\n");
-            }
+          a->initial_states = (int*)realloc(a->initial_states, sizeof(int) * a->number_of_graphs);
+          if(a->initial_states == NULL) {
+            fatal_error("Realloc error for initial states");
           }
-          for(int i = 0; i < processedLexicalMasks[lexicalMaskCnt].subGraph->number_of_tags; i++) {
-            if(processedLexicalMasks[lexicalMaskCnt].subGraph->tags[i] != NULL) {
-              u_fprintf(foutput, "tag %d not null, input : ", i);
-              u_fputs(processedLexicalMasks[lexicalMaskCnt].subGraph->tags[i]->input, foutput);
-            }
-            u_fprintf(foutput, "\n");
-          } 
+          a->initial_states[a->number_of_graphs] = a->number_of_states;
+          
+          a->number_of_states_per_graphs = (int*)realloc(a->number_of_states_per_graphs, sizeof(int) * a->number_of_graphs);
+          if(a->number_of_states_per_graphs == NULL) {
+            fatal_error("Realloc error for number of states per graph");
+          }
+          a->number_of_states_per_graphs[a->number_of_graphs] = 2;           
+          
+          a->number_of_states += 2;         
+          a->states = (Fst2State*)realloc(a->states, a->number_of_states * sizeof(Fst2State));
+          if(a->states == NULL) {
+            fatal_error("Realloc error for states");
+          }
+          
+          a->states[a->number_of_states - 2] = new_Fst2State(allocator);
+          set_initial_state(a->states[a->number_of_states - 2], 1);
+          a->states[a->number_of_states - 1] = new_Fst2State(allocator);
+          set_final_state(a->states[a->number_of_states -1], 1);
+          
+          int last_number_of_tags = a->number_of_tags;
+          a->number_of_tags += processedLexicalMasks[lexicalMaskCnt].entriesCnt;          
+          a->tags = (Fst2Tag*)realloc(a->tags, a->number_of_tags * sizeof(Fst2Tag));
+          if(a->tags == NULL) {
+            fatal_error("Realloc error for tags");
+          }
 
-          //il ya deux masques lexicaux donc deux fichiers, <V> matche rien du tout donc attention bordel! il faut les mettre dans deux fichiers                   
-          save_Fst2(&vec, "/home/2in01/dbiguene/Documents/Stage/French/.fst2", processedLexicalMasks[lexicalMaskCnt].subGraph);  
-          fatal_error("t");    
+          for(int i = last_number_of_tags; i < a->number_of_tags; i++) {
+            a->tags[i] = new_Fst2Tag(allocator);  
+            a->tags[i]->input = u_strdup(processedLexicalMasks[lexicalMaskCnt].entries[i].input);
+            add_transition_to_state(a->states[a->number_of_states - 2], i, a->number_of_states - 1, allocator);         
+          }
+          
+          //modify the tran between the current state (lexical_mask)and the last state
+          //a->tags[pathStack[s].tag & SUB_ID_MASK]->input = u_strdup(processedLexicalMasks[lexicalMaskCnt].subGraphName);
+          a->tags[pathStack[s].tag & SUB_ID_MASK]->input = NULL;
+          u_fprintf(foutput, "stateNo : %d\n", pathStack[s].stateNo);
+          //stateNo is the current state, so we have to modify the input tran to call a subgraph, explore the output transition of the precedent state to find the proper one
+          Transition* ptr = a->states[pathStack[s].stateNo - 1]->transitions;
+          while(ptr != NULL) {
+            if(ptr->tag_number == pathStack[s].tag) {
+              ptr->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs;
+            }
+            ptr = ptr->next;
+          }
+
+          char title[128];
+          sprintf(title,"/home/2in01/dbiguene/Documents/Stage/French/z%d.fst2", lexicalMaskCnt);   
+          u_fprintf(foutput, "title : %s\n", title);
+          save_Fst2(&vec, title, a);
+                    
           lexicalMaskCnt++;
+          //exploreSubAuto(3);
+          outWordsOfGraph(0, depth + 1); // faux  
+          fatal_error("t");    
+          return 1; // faux
         }  
         u_fprintf(foutput, "END of lexical_mask processing\n");
       }
@@ -2346,7 +2316,6 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
               outputBuffer[outputPtrCnt++] = *tp++;
             }
           }
-
           if (wordMode) {
             if (inputPtrCnt || outputPtrCnt) {
               if (outOneWord(0) != 0) {
