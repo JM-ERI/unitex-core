@@ -1422,9 +1422,10 @@ public:
     int n_states = a->number_of_states;
     for(int j = 0; j < n_states; j++) {  
       Transition *t = a->states[j]->transitions;
-      while(t!=NULL) { 
+      while(t != NULL) { 
+        //Checks if the input tag is a lexical mask
         if(!(t->tag_number & SUBGRAPH_PATH_MARK) && a->tags[t->tag_number]->input[0] == '<' && a->tags[t->tag_number]->input[u_strlen(a->tags[t->tag_number]->input) - 1] == '>') {
-          unichar* lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
+          unichar *lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
           u_strcpy(lexical_mask, a->tags[t->tag_number]->input);
           lexical_mask[u_strlen(lexical_mask) -1] = '\0';
           lexical_mask++;  
@@ -1432,8 +1433,8 @@ public:
           //Check if the lexical mask is already encoutered
           int index = isProcessedLexicalMask(lexical_mask, a->tags[t->tag_number]->output);
           if(index >= 0) {
-            //The current lexical mask is already processed
-            //TODO     
+            //The current lexical mask is already processed, only the transition is changed   
+            t->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs;
           }
 
           else {
@@ -1687,9 +1688,8 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
     fatal_error("Malloc error in getWordsFromGraph for processedLexicalMasks");
   }
 
-  //!!
-  check_lexical_mask();
-  //!! 
+  //Checks the automaton's tags to find lexical masks
+  check_lexical_masks();
 
   switch (display_control) {
   case GRAPH: {    // explore each graph separately
