@@ -505,7 +505,6 @@ public:
       unichar *subGraphName;      //subgraphName to call when this lexical_mask is encoutered 
       int maxEntriesCnt;          //max number of entries in entries array, usefull to reallocation
       int entriesCnt;             //number of entries in the array
-      Fst2 *subGraph;              //subGraph to call when this lexical mask is found
   };
 
   /**
@@ -1298,7 +1297,14 @@ public:
     }
   } 
 
-  int isProcessedLexicalMask(unichar* lexical_mask, unichar* output, U_FILE* f) {
+  /**
+    * Checks if the given lexical mask is already processed
+    * lexical_mask is the lexical mask input, like "<N>"
+    * output is its output (may be NULL)
+    * If this lexical mask is already processed, this function return the corresponding index in processedLexicalMask
+    * In the other case, return -1 
+  **/
+  int isProcessedLexicalMask(unichar* lexical_mask, unichar* output) {
     for(int i = 0; i < lexicalMaskCnt; i++) {
       if(!u_strcmp(lexical_mask, processedLexicalMasks[i].lexical_mask.input) && !u_strcmp(output, processedLexicalMasks[i].lexical_mask.output)) {
         return i;
@@ -1307,8 +1313,12 @@ public:
     return -1;
   }
 
+  /**
+    * Explores all the paths of the given dictionary and extract the entries matching the lexical mask
+    * The entries are put in processedLexicalMask at the index corresponding to the lexical mask
+  **/
   void extract_entries_from_dic(struct locate_parameters* p, Dictionary* d, int offset, unichar inflected[], int pos_in_inflected, 
-                        int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, int index, U_FILE* f) {
+                        int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, int index) {
     int final,n_transitions,inf_number;
     int z=save_output(ustr);
     bool match;
@@ -1329,7 +1339,7 @@ public:
         if(processedLexicalMasks[index].entriesCnt >= processedLexicalMasks[index].maxEntriesCnt) {
           processedLexicalMasks[index].entries = (DicEntry*)realloc(processedLexicalMasks[index].entries, processedLexicalMasks[index].maxEntriesCnt * 2 * sizeof(DicEntry));
           if(processedLexicalMasks[index].entries == NULL) {
-            error("Realloc error in extract_entries_from_dic for entry num : %d, max : %d in index : %d.",processedLexicalMasks[index].entriesCnt, processedLexicalMasks[index].maxEntriesCnt, index);
+            fatal_error("Realloc error in extract_entries_from_dic for entries");
           }
           processedLexicalMasks[index].maxEntriesCnt *= 2;
         }
@@ -1337,13 +1347,6 @@ public:
         processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input = u_strdup(token);
         token = u_strtok_r(rest, delimiter, &rest);
         processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].output = u_strdup(token);       
-        
-        /*u_fprintf(f, "i : %d, input : ", processedLexicalMasks[index].entriesCnt);
-        u_fputs(processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input, f);  
-        u_fprintf(f, ",");  
-        u_fprintf(f, "output : ");
-        u_fputs(processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].output, f); 
-        u_fprintf(f, ".\n");*/
         processedLexicalMasks[index].entriesCnt++; 
       }
       free_dela_entry(dela_entry, allocator);
@@ -1355,9 +1358,158 @@ public:
       update_last_position(p, pos_offset);
       offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
       inflected[pos_in_inflected] = c;       
-      extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, index, f);
+      extract_entries_from_dic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, index);
       restore_output(z,ustr);
     }
+  }
+
+  /**
+    * Create a subgraph when a new lexical mask is found
+    * This subgraph contains two states : the initial state 
+    * and the state with all the entries found in processLexicalMask's index corresponding to this lexical mask (the last index i.e lexicalMaskCnt)
+  **/
+  void create_lexical_mask_subgraph(Abstract_allocator allocator) {
+    a->number_of_graphs += 1;
+    a->graph_names = (unichar**)realloc(a->graph_names, sizeof(unichar*) * (a->number_of_graphs + 1));
+    if(a->graph_names == NULL) {
+      fatal_error("Realloc error for graph names in create_lexical_mask_subgraph");
+    }
+    a->graph_names[a->number_of_graphs] = u_strdup(processedLexicalMasks[lexicalMaskCnt].subGraphName);              
+    a->initial_states = (int*)realloc(a->initial_states, sizeof(int) * a->number_of_graphs);
+    if(a->initial_states == NULL) {
+      fatal_error("Realloc error for initial states in create_lexical_mask_subgraph");
+    }
+    a->initial_states[a->number_of_graphs] = a->number_of_states;            
+    a->number_of_states_per_graphs = (int*)realloc(a->number_of_states_per_graphs, sizeof(int) * a->number_of_graphs);
+    if(a->number_of_states_per_graphs == NULL) {
+      fatal_error("Realloc error for number of states per graph in create_lexical_mask_subgraph");
+    }
+    a->number_of_states_per_graphs[a->number_of_graphs] = 2;                       
+    a->number_of_states += 2;         
+    a->states = (Fst2State*)realloc(a->states, a->number_of_states * sizeof(Fst2State));
+    if(a->states == NULL) {
+      fatal_error("Realloc error for states in create_lexical_mask_subgraph");
+    }            
+    a->states[a->number_of_states - 2] = new_Fst2State(allocator);
+    set_initial_state(a->states[a->number_of_states - 2], 1);
+    a->states[a->number_of_states - 1] = new_Fst2State(allocator);
+    set_final_state(a->states[a->number_of_states -1], 1);            
+    int last_number_of_tags = a->number_of_tags;
+    a->number_of_tags += processedLexicalMasks[lexicalMaskCnt].entriesCnt;          
+    a->tags = (Fst2Tag*)realloc(a->tags, a->number_of_tags * sizeof(Fst2Tag));
+    if(a->tags == NULL) {
+      fatal_error("Realloc error for tags in create_lexical_mask_subgraph");
+    }
+    //create a new tag for each entry found in processedLexicalMask at lexicalMaskCnt index 
+    int k = a->number_of_tags - 1;
+    for(int i = last_number_of_tags; i < a->number_of_tags; i++) {
+      a->tags[i] = new_Fst2Tag(allocator);  
+      a->tags[i]->input = u_strdup(processedLexicalMasks[lexicalMaskCnt].entries[k - last_number_of_tags].input);
+      add_transition_to_state(a->states[a->number_of_states - 2], i, a->number_of_states - 1, allocator);
+      k--;         
+    }
+  }
+
+  /**
+    * Checks the automaton's tags to find lexical masks.
+    * For each lexical mask, explores the binary dictionnaries
+    * and creates a subgraph with all the entries that matches the lexical mask
+  **/
+  void check_lexical_masks() {
+    unichar inflected[1024];
+    Abstract_allocator allocator = create_abstract_allocator("getWordsFromGraph",AllocatorFreeOnlyAtAllocatorDelete|AllocatorTipGrowingOftenRecycledObject,0);
+    struct pattern* pattern;
+    int n_states = a->number_of_states;
+    for(int j = 0; j < n_states; j++) {  
+      Transition *t = a->states[j]->transitions;
+      while(t!=NULL) { 
+        if(!(t->tag_number & SUBGRAPH_PATH_MARK) && a->tags[t->tag_number]->input[0] == '<' && a->tags[t->tag_number]->input[u_strlen(a->tags[t->tag_number]->input) - 1] == '>') {
+          unichar* lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
+          u_strcpy(lexical_mask, a->tags[t->tag_number]->input);
+          lexical_mask[u_strlen(lexical_mask) -1] = '\0';
+          lexical_mask++;  
+
+          //Check if the lexical mask is already encoutered
+          int index = isProcessedLexicalMask(lexical_mask, a->tags[t->tag_number]->output);
+          if(index >= 0) {
+            //The current lexical mask is already processed
+            //TODO     
+          }
+
+          else {
+            //This lexical mask is not already processed, so we have to explore each binary dictionary to create a subgraph
+            if(lexicalMaskCnt >= maxLexicalMaskCnt) {
+              processedLexicalMasks = (ProcessedLexicalMask*)realloc(processedLexicalMasks, sizeof(ProcessedLexicalMask) * maxLexicalMaskCnt * 2);
+              if(processedLexicalMasks == NULL)
+                fatal_error("Realloc error in outWordsOfGraph for processedLexicalMasks");
+              maxLexicalMaskCnt *= 2;
+            }
+            processedLexicalMasks[lexicalMaskCnt].lexical_mask.input = u_strdup(lexical_mask);
+            processedLexicalMasks[lexicalMaskCnt].maxEntriesCnt = 64;
+            processedLexicalMasks[lexicalMaskCnt].entriesCnt = 0;
+            if(a->tags[t->tag_number]->output != NULL) {
+              processedLexicalMasks[lexicalMaskCnt].lexical_mask.output = u_strdup(a->tags[t->tag_number]->output);
+              processedLexicalMasks[lexicalMaskCnt].subGraphName = (unichar*)malloc(sizeof(unichar) * 
+                                                                  ((int)u_strlen(processedLexicalMasks[lexicalMaskCnt].lexical_mask.input) + 
+                                                                  (int)u_strlen(processedLexicalMasks[lexicalMaskCnt].lexical_mask.output)) + 1);
+              if(processedLexicalMasks[lexicalMaskCnt].subGraphName == NULL) {
+                fatal_error("Malloc error in outWordsOfGraph for subGraphName");
+              }   
+              u_sprintf(processedLexicalMasks[lexicalMaskCnt].subGraphName,":%s%s", processedLexicalMasks[lexicalMaskCnt].lexical_mask.input,
+              processedLexicalMasks[lexicalMaskCnt].lexical_mask.output);
+            }
+            else {
+              processedLexicalMasks[lexicalMaskCnt].lexical_mask.output = NULL;
+              processedLexicalMasks[lexicalMaskCnt].subGraphName = (unichar*)malloc(sizeof(unichar) * (int)u_strlen(processedLexicalMasks[lexicalMaskCnt].lexical_mask.input) + 1);
+              if(processedLexicalMasks[lexicalMaskCnt].subGraphName == NULL) {
+                fatal_error("Malloc error in outWordsOfGraph for subGraphName");
+              }   
+              u_sprintf(processedLexicalMasks[lexicalMaskCnt].subGraphName,":%s", processedLexicalMasks[lexicalMaskCnt].lexical_mask.input);
+            }            
+            processedLexicalMasks[lexicalMaskCnt].entries = (DicEntry*)malloc(sizeof(DicEntry) * processedLexicalMasks[lexicalMaskCnt].maxEntriesCnt);
+            if(processedLexicalMasks[lexicalMaskCnt].entries == NULL) {
+              fatal_error("Malloc error in outWordsOfGraph for entries");
+            }        
+
+            pattern = build_pattern(lexical_mask, NULL, 0, allocator);    
+            for(int i = 0; i < dicCnt; i++) {         
+              //extract all the entries matching the lexical_mask         
+              extract_entries_from_dic(p, p->morpho_dic[i], p->morpho_dic[i]->initial_state_offset, inflected, 0, 0, 
+                                      new_Ustring(), new_Ustring(), pattern,allocator,lexicalMaskCnt);
+            }  
+            free_pattern(pattern, allocator);        
+            create_lexical_mask_subgraph(allocator);
+            //modify the tran between the current state (lexical_mask)and the last state
+            t->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs; //??            
+            
+            //utile?
+            /*
+            Transition* ptr = a->states[j - 1]->transitions;
+            while(ptr != NULL) {
+              if(ptr->tag_number == t->tag_number) {
+                ptr->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs;
+              }
+              ptr = ptr->next;
+            }
+            */
+            
+            /*
+            char title[128];
+            sprintf(title,"/home/2in01/dbiguene/Documents/Stage/French/z%d.fst2", lexicalMaskCnt);   
+            save_Fst2(&vec, title, a);
+            */
+
+            ignoreTable = (int*)realloc(ignoreTable, sizeof(int) * (a->number_of_graphs + 1));
+            numOfIgnore = (int*)realloc(numOfIgnore, sizeof(int) * (a->number_of_graphs + 1));
+            ignoreTable[a->number_of_graphs] = 0;
+            numOfIgnore[a->number_of_graphs] = 0;
+            lexicalMaskCnt++; 
+          }
+        }
+        t = t->next;
+      }
+    }
+    free(allocator);
   }
 
 private:
@@ -1526,7 +1678,6 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
   char ofNameTmp[1024];
   char tmpchar[1024];
   char ttpchar[1024];
-  unichar inflected[1024];
   // load fst2 file
   loadGraph(changeStrToIdx, changeStrTo, fname);
   resetCounters();
@@ -1537,156 +1688,7 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
   }
 
   //!!
-  Abstract_allocator allocator=create_abstract_allocator("explore_dic_in_morpho_mode_standard",AllocatorFreeOnlyAtAllocatorDelete|AllocatorTipGrowingOftenRecycledObject,0);
-  struct pattern* pattern;
-  int n_states = a->number_of_states;
-  //u_printf("number of states : %d\n", n_states);
-  for(int j = 0; j < n_states; j++) {
-    //u_printf("j : %d\n", j);      
-    Transition *t = a->states[j]->transitions;
-    while(t!=NULL) {
-      //u_printf("tran\n"); 
-      if(!(t->tag_number & SUBGRAPH_PATH_MARK) && a->tags[t->tag_number]->input[0] == '<' && a->tags[t->tag_number]->input[u_strlen(a->tags[t->tag_number]->input) - 1] == '>') {
-          u_printf("lexical mask found!!\n");
-          unichar* lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
-          u_strcpy(lexical_mask, a->tags[t->tag_number]->input);
-          lexical_mask[u_strlen(lexical_mask) -1] = '\0';
-          lexical_mask++;  
-
-          //Check if the lexical mask is already encoutered
-          int index = isProcessedLexicalMask(lexical_mask, a->tags[t->tag_number]->output, foutput);
-          if(index >= 0) {
-            //The current lexical mask is already processed
-            //TODO     
-          }
-
-          else {
-            //This lexical mask is not already processed, so we have to explore each binary dictionary to create a subgraph
-            if(lexicalMaskCnt >= maxLexicalMaskCnt) {
-              processedLexicalMasks = (ProcessedLexicalMask*)realloc(processedLexicalMasks, sizeof(ProcessedLexicalMask) * maxLexicalMaskCnt * 2);
-              if(processedLexicalMasks == NULL)
-                fatal_error("Realloc error in outWordsOfGraph for processedLexicalMasks");
-              maxLexicalMaskCnt *= 2;
-            }
-            processedLexicalMasks[lexicalMaskCnt].lexical_mask.input = u_strdup(lexical_mask);
-            processedLexicalMasks[lexicalMaskCnt].maxEntriesCnt = 64;
-            processedLexicalMasks[lexicalMaskCnt].entriesCnt = 0;
-            if(a->tags[t->tag_number]->output != NULL) {
-              processedLexicalMasks[lexicalMaskCnt].lexical_mask.output = u_strdup(a->tags[t->tag_number]->output);
-              processedLexicalMasks[lexicalMaskCnt].subGraphName = (unichar*)malloc(sizeof(unichar) * 
-                                                                ((int)u_strlen(processedLexicalMasks[lexicalMaskCnt].lexical_mask.input) + 
-                                                                (int)u_strlen(processedLexicalMasks[lexicalMaskCnt].lexical_mask.output)) + 1);
-              if(processedLexicalMasks[lexicalMaskCnt].subGraphName == NULL) {
-                fatal_error("Malloc error in outWordsOfGraph for subGraphName");
-              }   
-              u_sprintf(processedLexicalMasks[lexicalMaskCnt].subGraphName,":%s%s", processedLexicalMasks[lexicalMaskCnt].lexical_mask.input,
-              processedLexicalMasks[lexicalMaskCnt].lexical_mask.output);
-            }
-            else {
-              processedLexicalMasks[lexicalMaskCnt].lexical_mask.output = NULL;
-              processedLexicalMasks[lexicalMaskCnt].subGraphName = (unichar*)malloc(sizeof(unichar) * (int)u_strlen(processedLexicalMasks[lexicalMaskCnt].lexical_mask.input) + 1);
-              if(processedLexicalMasks[lexicalMaskCnt].subGraphName == NULL) {
-                fatal_error("Malloc error in outWordsOfGraph for subGraphName");
-              }   
-              u_sprintf(processedLexicalMasks[lexicalMaskCnt].subGraphName,":%s", processedLexicalMasks[lexicalMaskCnt].lexical_mask.input);
-            }            
-            processedLexicalMasks[lexicalMaskCnt].entries = (DicEntry*)malloc(sizeof(DicEntry) * processedLexicalMasks[lexicalMaskCnt].maxEntriesCnt);
-            if(processedLexicalMasks[lexicalMaskCnt].entries == NULL) {
-              fatal_error("Malloc error in outWordsOfGraph for entries");
-            }        
-
-            pattern = build_pattern(lexical_mask, NULL, 0, allocator);    
-            for(int i = 0; i < dicCnt; i++) {         
-              //extract all the entries matching the lexical_mask         
-              extract_entries_from_dic(
-                              p,
-                              p->morpho_dic[i],
-                              p->morpho_dic[i]->initial_state_offset,
-                              inflected, 
-                              0, 
-                              0, 
-                              new_Ustring(), 
-                              new_Ustring(), 
-                              pattern,
-                              allocator,
-                              lexicalMaskCnt,
-                              foutput                      
-              );
-            }  
-            free_pattern(pattern, allocator);
-            //u_printf("subgraph creation : \n");
-            //Creation of subgraph         
-            a->number_of_graphs += 1;
-            a->graph_names = (unichar**)realloc(a->graph_names, sizeof(unichar*) * (a->number_of_graphs + 1));
-            if(a->graph_names == NULL) {
-              fatal_error("Realloc error for graph names");
-            }
-            a->graph_names[a->number_of_graphs] = u_strdup(processedLexicalMasks[lexicalMaskCnt].subGraphName);  
-            
-            a->initial_states = (int*)realloc(a->initial_states, sizeof(int) * a->number_of_graphs);
-            if(a->initial_states == NULL) {
-              fatal_error("Realloc error for initial states");
-            }
-            a->initial_states[a->number_of_graphs] = a->number_of_states;
-            
-            a->number_of_states_per_graphs = (int*)realloc(a->number_of_states_per_graphs, sizeof(int) * a->number_of_graphs);
-            if(a->number_of_states_per_graphs == NULL) {
-              fatal_error("Realloc error for number of states per graph");
-            }
-            a->number_of_states_per_graphs[a->number_of_graphs] = 2;           
-            
-            a->number_of_states += 2;         
-            a->states = (Fst2State*)realloc(a->states, a->number_of_states * sizeof(Fst2State));
-            if(a->states == NULL) {
-              fatal_error("Realloc error for states");
-            }
-            
-            a->states[a->number_of_states - 2] = new_Fst2State(allocator);
-            set_initial_state(a->states[a->number_of_states - 2], 1);
-            a->states[a->number_of_states - 1] = new_Fst2State(allocator);
-            set_final_state(a->states[a->number_of_states -1], 1);
-            
-            int last_number_of_tags = a->number_of_tags;
-            a->number_of_tags += processedLexicalMasks[lexicalMaskCnt].entriesCnt;          
-            a->tags = (Fst2Tag*)realloc(a->tags, a->number_of_tags * sizeof(Fst2Tag));
-            if(a->tags == NULL) {
-              fatal_error("Realloc error for tags");
-            }
-
-            int k = a->number_of_tags - 1;
-            for(int i = last_number_of_tags; i < a->number_of_tags; i++) {
-              a->tags[i] = new_Fst2Tag(allocator);  
-              a->tags[i]->input = u_strdup(processedLexicalMasks[lexicalMaskCnt].entries[k - last_number_of_tags].input);
-              add_transition_to_state(a->states[a->number_of_states - 2], i, a->number_of_states - 1, allocator);
-              k--;         
-            }
-            //modify the tran between the current state (lexical_mask)and the last state
-            t->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs; //??            
-            //utile?
-            /*Transition* ptr = a->states[j - 1]->transitions;
-            while(ptr != NULL) {
-              if(ptr->tag_number == t->tag_number) {
-                ptr->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs;
-              }
-              ptr = ptr->next;
-            }*/
-            char title[128];
-            sprintf(title,"/home/2in01/dbiguene/Documents/Stage/French/z%d.fst2", lexicalMaskCnt);   
-            save_Fst2(&vec, title, a);   
-            // a tester!!!!
-            ignoreTable = (int*)realloc(ignoreTable, sizeof(int) * (a->number_of_graphs + 1));
-            numOfIgnore = (int*)realloc(numOfIgnore, sizeof(int) * (a->number_of_graphs + 1));
-            ignoreTable[a->number_of_graphs] = 0;
-            numOfIgnore[a->number_of_graphs] = 0;
-
-            lexicalMaskCnt++; 
-          }
-          u_printf("END of lexical_mask processing\n");
-      }
-      t = t->next;
-    }
-  }
-  free(allocator);
+  check_lexical_mask();
   //!! 
 
   switch (display_control) {
