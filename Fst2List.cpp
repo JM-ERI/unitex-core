@@ -915,20 +915,15 @@ public:
       }
       INPUTBUFFER[inBufferCnt] = 0;
       OUTPUTBUFFER[outBufferCnt] = 0;
-
-      //the output file is only generated when the user checks the split mod		
-      if ((automateMode == TRANMODE) && outBufferCnt /*&& generateDictionary == true*/) {
-      	//Split outputs mod
-        //u_fprintf(foutput, "INPUT :");
-    	  u_fputs(INPUTBUFFER, foutput);
-		    //u_fprintf(foutput, "\n");
-		    //u_fprintf(foutput, "OUTPUT :");
-    	  u_fputs(OUTPUTBUFFER, foutput);
-		    u_fprintf(foutput, "\n");
+	
+      u_fputs(INPUTBUFFER, foutput);
+      if ((automateMode == TRANMODE) && outBufferCnt) {
+        u_fprintf(foutput, "%S%S", saveSep, OUTPUTBUFFER);
       }
       if (display_control == FST2LIST_DEBUG) {
         printPathNames(foutput);
       }
+      u_fprintf(foutput, "\n");
       numberOfOutLine++;
       inBufferCnt = outBufferCnt = 0;
     } else { // suffix == 0
@@ -1325,7 +1320,7 @@ public:
     unichar* token;
     offset=read_dictionary_state(d,offset,&final,&n_transitions,&inf_number);
     if (final) {
-      //If the current state is final, uncompress the entry to obtain the label and compare the pattern with the result of uncompress
+      //If the current state is final, uncompresses the entry to obtain the label and compare the pattern with the result of uncompress
       inflected[pos_in_inflected] = '\0';     
       struct list_ustring* tmp = d->inf->codes[inf_number];
       uncompress_entry(inflected, tmp->string, line_buffer);   
@@ -1343,6 +1338,7 @@ public:
           }
           processedLexicalMasks[index].maxEntriesCnt *= 2;
         }
+        //split the input and the output
         token = u_strtok_r(rest, delimiter, &rest);
         processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input = u_strdup(token);
         token = u_strtok_r(rest, delimiter, &rest);
@@ -1354,7 +1350,7 @@ public:
     unichar c;
     int adr;
     for (int i = 0; i < n_transitions; i++) {  
-      //if the current state is not final, explore all the outgoing transitions    
+      //if the current state is not final, explores all the outgoing transitions    
       update_last_position(p, pos_offset);
       offset=read_dictionary_transition(d,offset,&c,&adr,ustr);
       inflected[pos_in_inflected] = c;       
@@ -2574,7 +2570,7 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
 //
 //
 
-const char* optstring_Fst2List=":o:Sp:a:t:l:i:mRMdf:vVhs:qr:c:g:b:D:";
+const char* optstring_Fst2List=":o:Sp:a:t:l:i:mdf:vVhs:qr:c:g:D:";
 const struct option_TS lopts_Fst2List[]= {
   {"output",required_argument_TS,NULL,'o'},
   {"ignore_outputs",required_argument_TS,NULL,'a'},
@@ -2596,10 +2592,7 @@ const struct option_TS lopts_Fst2List[]= {
   {"input_encoding",required_argument_TS,NULL,'k'},
   {"output_encoding",required_argument_TS,NULL,'q'},
   {"help",no_argument_TS,NULL,'h'},
-  {"generate_dictionary",required_argument_TS,NULL,'b'},
-  {"merge_mode",no_argument_TS,NULL,'M'},
-  {"replace_mode",no_argument_TS,NULL,'R'},
-  {"replace_mode",required_argument_TS,NULL,'D'},
+  {"binary dics",required_argument_TS,NULL,'D'},
   {NULL,no_argument_TS,NULL,0}
 };
 
@@ -2607,7 +2600,7 @@ const struct option_TS lopts_Fst2List[]= {
 // FIXME(jhondoe) Full of possible memory leaks: aa.saveEntre, wordPtr2...
 int main_Fst2List(int argc, char* const argv[]) {
   char* ofilename = NULL;
-  char* configfilename = NULL;
+  //char* configfilename = NULL;
   char* morpho_dic = NULL;
 
   unichar changeStrTo[16][MAX_CHANGE_SYMBOL_SIZE];
@@ -2647,21 +2640,11 @@ int main_Fst2List(int argc, char* const argv[]) {
     case 'd':
       aa.enableLoopCheck = false;
       break;
-    case 'b' :    	
-      aa.generateDictionary = true;
-      configfilename = new char[strlen((char*)&options.vars()->optarg[0]) + 1];
-      strcpy(configfilename, (char*) &options.vars()->optarg[0]);
-      aa.configFile = u_fopen(&vec, configfilename, U_READ);
-      //u_printf("configfilename : %s \n", configfilename);     
-      if (!aa.configFile) {
-      	fatal_error("Cannot open file %s\n", configfilename);
-      }	
-      break;
     case 'D' :
     	//load morphological dic
       if (options.vars()->optarg[0]!='\0') {
-        configfilename = new char[strlen((char*)&options.vars()->optarg[0]) + 1];
-        if (morpho_dic==NULL) { 
+        //configfilename = new char[strlen((char*)&options.vars()->optarg[0]) + 1];
+        if (morpho_dic == NULL) { 
           morpho_dic = strdup(options.vars()->optarg);
         }
         else {
@@ -2671,14 +2654,6 @@ int main_Fst2List(int argc, char* const argv[]) {
         aa.dicCnt++;
       }
     	break;
-    case 'M':    	
-      //MERGE_MODE
-      //TODO
-      break;
-    case 'R':    	
-      //REPLACE_MOD   
-      //TODO
-      break;
     case 'S':
       ofilename = new char[strlen(MAGIC_OUT_STDOUT) + 1];
       strcpy(ofilename, MAGIC_OUT_STDOUT);
