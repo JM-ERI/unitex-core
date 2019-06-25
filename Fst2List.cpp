@@ -1326,11 +1326,9 @@ public:
       uncompress_entry(inflected, tmp->string, line_buffer);   
       struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
       match = is_entry_compatible_with_pattern(dela_entry, pattern);
-
       if(match == 1) { 
         unichar* rest = line_buffer->str; 
         unichar delimiter[2] = {(unichar)',', (unichar)'\0'};
-
         if(processedLexicalMasks[index].entriesCnt >= processedLexicalMasks[index].maxEntriesCnt) {
           processedLexicalMasks[index].entries = (DicEntry*)realloc(processedLexicalMasks[index].entries, processedLexicalMasks[index].maxEntriesCnt * 2 * sizeof(DicEntry));
           if(processedLexicalMasks[index].entries == NULL) {
@@ -1425,12 +1423,16 @@ public:
           u_strcpy(lexical_mask, a->tags[t->tag_number]->input);
           lexical_mask[u_strlen(lexical_mask) -1] = '\0';
           lexical_mask++;  
-
           //Check if the lexical mask is already encoutered
           int index = isProcessedLexicalMask(lexical_mask, a->tags[t->tag_number]->output);
           if(index >= 0) {
-            //The current lexical mask is already processed, only the transition is changed   
-            t->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs;
+            if(processedLexicalMasks[index].entriesCnt == 0) {
+              t->tag_number = 0;
+            }
+            //The current lexical mask is already processed, only the transition is changed  
+            else { 
+              t->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs;
+            }
           }
 
           else {
@@ -1472,34 +1474,40 @@ public:
             for(int i = 0; i < dicCnt; i++) {         
               //extract all the entries matching the lexical_mask         
               extract_entries_from_dic(p, p->morpho_dic[i], p->morpho_dic[i]->initial_state_offset, inflected, 0, 0, 
-                                      new_Ustring(), new_Ustring(), pattern,allocator,lexicalMaskCnt);
-            }  
-            free_pattern(pattern, allocator);        
-            create_lexical_mask_subgraph(allocator);
-            //modify the tran between the current state (lexical_mask)and the last state
-            t->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs; //??            
-            
-            //utile?
-            /*
-            Transition* ptr = a->states[j - 1]->transitions;
-            while(ptr != NULL) {
-              if(ptr->tag_number == t->tag_number) {
-                ptr->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs;
-              }
-              ptr = ptr->next;
-            }
-            */
-            
-            /*
-            char title[128];
-            sprintf(title,"/home/2in01/dbiguene/Documents/Stage/French/z%d.fst2", lexicalMaskCnt);   
-            save_Fst2(&vec, title, a);
-            */
+                                      new_Ustring(), new_Ustring(), pattern, allocator, lexicalMaskCnt);
+            }              
+            free_pattern(pattern, allocator);     
+            if(processedLexicalMasks[lexicalMaskCnt].entriesCnt > 0) {
+              create_lexical_mask_subgraph(allocator);
 
-            ignoreTable = (int*)realloc(ignoreTable, sizeof(int) * (a->number_of_graphs + 1));
-            numOfIgnore = (int*)realloc(numOfIgnore, sizeof(int) * (a->number_of_graphs + 1));
-            ignoreTable[a->number_of_graphs] = 0;
-            numOfIgnore[a->number_of_graphs] = 0;
+              //modify the tran between the current state (lexical_mask)and the last state
+              t->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs; //??            
+              
+              //utile?
+              /*
+              Transition* ptr = a->states[j - 1]->transitions;
+              while(ptr != NULL) {
+                if(ptr->tag_number == t->tag_number) {
+                  ptr->tag_number = SUBGRAPH_PATH_MARK | a->number_of_graphs;
+                }
+                ptr = ptr->next;
+              }
+              */              
+              
+              /*u_printf("save in %d!\n", lexicalMaskCnt);
+              char title[128];
+              sprintf(title,"/home/2in01/dbiguene/Documents/Stage/French/z%d.fst2", lexicalMaskCnt);   
+              save_Fst2(&vec, title, a); */
+              
+
+              ignoreTable = (int*)realloc(ignoreTable, sizeof(int) * (a->number_of_graphs + 1));
+              numOfIgnore = (int*)realloc(numOfIgnore, sizeof(int) * (a->number_of_graphs + 1));
+              ignoreTable[a->number_of_graphs] = 0;
+              numOfIgnore[a->number_of_graphs] = 0;
+            }
+            else {
+               t->tag_number = 0;
+            }
             lexicalMaskCnt++; 
           }
         }
