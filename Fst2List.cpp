@@ -2266,7 +2266,7 @@ int CFstApp::outWordsOfGraph(int depth) {
 //
 //
 
-const char* optstring_Fst2List=":o:Sp:a:t:l:i:mdf:vVhs:qr:c:g:";
+const char* optstring_Fst2List=":o:Sp:a:t:l:i:mdDf:vVhs:qr:c:g:";
 const struct option_TS lopts_Fst2List[]= {
   {"output",required_argument_TS,NULL,'o'},
   {"ignore_outputs",required_argument_TS,NULL,'a'},
@@ -2287,6 +2287,7 @@ const struct option_TS lopts_Fst2List[]= {
   {"stop_mark",required_argument_TS,NULL,'Q'},
   {"input_encoding",required_argument_TS,NULL,'k'},
   {"output_encoding",required_argument_TS,NULL,'q'},
+  {"make_dictionary",no_argument_TS,NULL,'D'},
   {"help",no_argument_TS,NULL,'h'},
   {NULL,no_argument_TS,NULL,0}
 };
@@ -2331,6 +2332,9 @@ int main_Fst2List(int argc, char* const argv[]) {
       break;
     case 'd':
       aa.enableLoopCheck = false;
+      break;
+    case 'D':
+      //fatal_error("-D");
       break;
     case 'S':
       ofilename = new char[strlen(MAGIC_OUT_STDOUT) + 1];
