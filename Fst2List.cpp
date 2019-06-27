@@ -497,6 +497,9 @@ public:
     unichar* output;        //output extracted from inf file
   };
 
+  /**
+  * structure to represent all the processed lexical masks
+  */
   struct ProcessedLexicalMask {
       LexicalMask lexicalMask;    // represents the lexical mask with the corresponding input and output
       DicEntry *entries;          // represents the box's content by entries extracted from morphological dic
