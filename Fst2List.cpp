@@ -1431,7 +1431,12 @@ public:
       Transition *t = a->states[j]->transitions;
       while(t != NULL) {
         // check if the input tag is a lexical mask
-        if(!(t->tag_number & SUBGRAPH_PATH_MARK) && a->tags[t->tag_number]->input[0] == '<' && a->tags[t->tag_number]->input[u_strlen(a->tags[t->tag_number]->input) - 1] == '>') {
+        if(!(t->tag_number & SUBGRAPH_PATH_MARK) &&
+          (a->tags[t->tag_number]->input[0] == '<' && a->tags[t->tag_number]->input[u_strlen(a->tags[t->tag_number]->input) - 1] == '>') && u_strcmp(a->tags[t->tag_number]->input, "<E>")) {
+          if(!u_strcmp(a->tags[t->tag_number]->input, "<DIC>")) {
+            //TODO
+            continue;
+          }
           unichar *lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
           u_strcpy(lexical_mask, a->tags[t->tag_number]->input);
           lexical_mask[u_strlen(lexical_mask) -1] = '\0';
@@ -1663,14 +1668,13 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
   loadGraph(changeStrToIdx, changeStrTo, fname);
   resetCounters();
   ofNameTmp[0] = 0;
-  processedLexicalMasks = (ProcessedLexicalMask*)malloc(sizeof(ProcessedLexicalMask) * maxLexicalMaskCnt); //TODO : realloc
+  processedLexicalMasks = (ProcessedLexicalMask*)malloc(sizeof(ProcessedLexicalMask) * maxLexicalMaskCnt);
   if(processedLexicalMasks == NULL) {
     fatal_error("Malloc error for processedLexicalMasks in getWordsFromGraph");
   }
 
   //Checks the automaton's tags to find lexical masks
   check_lexical_masks();
-
   switch (display_control) {
   case GRAPH: {    // explore each graph separately
     if (enableLoopCheck) {
@@ -2584,7 +2588,7 @@ const struct option_TS lopts_Fst2List[]= {
 // FIXME(jhondoe) Full of possible memory leaks: aa.saveEntre, wordPtr2...
 int main_Fst2List(int argc, char* const argv[]) {
   char* ofilename = NULL;
-  char* morpho_dic = NULL;
+  char morpho_dic[1025] = "";
 
   unichar changeStrTo[16][MAX_CHANGE_SYMBOL_SIZE];
   int changeStrToIdx;
@@ -2626,13 +2630,13 @@ int main_Fst2List(int argc, char* const argv[]) {
     case 'D' :
     	// load morphological dictionaries
       if (options.vars()->optarg[0]!='\0') {
-        if (morpho_dic == NULL) { 
-          morpho_dic = strdup(options.vars()->optarg);
+        if (strcmp(morpho_dic, "") == 0) {
+          strcpy(morpho_dic, options.vars()->optarg);
         }
         else {
           strcat(morpho_dic,";");
           strcat(morpho_dic,options.vars()->optarg);
-        } 
+        }
         aa.morphDicCnt++;
       }
     	break;
@@ -2892,7 +2896,6 @@ int main_Fst2List(int argc, char* const argv[]) {
 
   aa.p = new_locate_parameters();
   load_morphological_dictionaries(&aa.vec, morpho_dic, aa.p);
-
   aa.getWordsFromGraph(changeStrToIdx, changeStrTo, fst2_filename);
 
   delete ofilename;
