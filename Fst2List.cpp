@@ -1313,7 +1313,7 @@ public:
     * the entries are put in processedLexicalMask at the index corresponding to the lexical mask
   **/
   void extractEntriesFromDic(struct locate_parameters* p, Dictionary* d, int offset, unichar inflected[], int pos_in_inflected,
-                        int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, int index) {
+                        int pos_offset, Ustring *line_buffer, Ustring* ustr, struct pattern* pattern, Abstract_allocator allocator, int index, bool isDic) {
     int final, n_transitions, inf_number;
     int z = save_output(ustr);
     unichar* token;
@@ -1323,7 +1323,7 @@ public:
       struct list_ustring* tmp = d->inf->codes[inf_number];
       uncompress_entry(inflected, tmp->string, line_buffer);
       struct dela_entry* dela_entry = tokenize_DELAF_line_opt(line_buffer->str, allocator);
-      if(is_entry_compatible_with_pattern(dela_entry, pattern)) {  // the pattern matches the gramatical label
+      if(isDic || is_entry_compatible_with_pattern(dela_entry, pattern)) {  // the pattern matches the gramatical label
         unichar delimiter[2] = {(unichar)',', (unichar)'\0'};
         if(processedLexicalMasks[index].entriesCnt >= processedLexicalMasks[index].maxEntriesCnt) {
           processedLexicalMasks[index].entries = (DicEntry*)realloc(processedLexicalMasks[index].entries, processedLexicalMasks[index].maxEntriesCnt * 2 * sizeof(DicEntry));
@@ -1346,7 +1346,7 @@ public:
       update_last_position(p, pos_offset);
       offset = read_dictionary_transition(d,offset,&c,&adr,ustr);
       inflected[pos_in_inflected] = c;
-      extractEntriesFromDic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, index);
+      extractEntriesFromDic(p, d, adr, inflected,pos_in_inflected + 1, pos_offset, line_buffer, ustr, pattern, allocator, index, isDic);
       restore_output(z,ustr);
     }
   }
@@ -1422,27 +1422,27 @@ public:
   /**
   * reallocate each pointer whose size depends on the number of graphs
   */
-  void realloc_fst2(int count) {
+  void reallocFst2(int count) {
     int total_number_of_graph = a->number_of_graphs + count + 1;
     a->graph_names = (unichar**)realloc(a->graph_names, sizeof(unichar*) * total_number_of_graph);
     if(a->graph_names == NULL) {
-      fatal_error("realloc error for graph_names in ");
+      fatal_error("realloc error for graph_names in reallocFst2reallocFst2");
     }
     a->initial_states = (int*)realloc(a->initial_states, sizeof(int) * total_number_of_graph);
     if(a->initial_states == NULL) {
-      fatal_error("realloc error for initial_states in ");
+      fatal_error("realloc error for initial_states in reallocFst2");
     }
-    a->number_of_states_per_graphs = (int*)realloc(a->number_of_states_per_graphs, sizeof(int) * total_number_of_graph); // BUG!!
+    a->number_of_states_per_graphs = (int*)realloc(a->number_of_states_per_graphs, sizeof(int) * total_number_of_graph);
     if(a->number_of_states_per_graphs == NULL) {
-      fatal_error("realloc error for number_of_states per graph in ");
+      fatal_error("realloc error for number_of_states per graph in reallocFst2");
     }
     a->states = (Fst2State*)realloc(a->states, (a->number_of_states + (count * 2)) * sizeof(Fst2State));
     if(a->states == NULL) {
-      fatal_error("realloc error for states in ");
+      fatal_error("realloc error for states in reallocFst2");
     }
     ignoreTable = (int*)realloc(ignoreTable, sizeof(int) * total_number_of_graph);
     numOfIgnore = (int*)realloc(numOfIgnore, sizeof(int) * total_number_of_graph);
-    for(int i = a->number_of_graphs; i <= total_number_of_graph; i++) {
+    for(int i = a->number_of_graphs; i < total_number_of_graph; i++) {
       ignoreTable[i] = 0;
       numOfIgnore[i] = 0;
     }
@@ -1459,19 +1459,19 @@ public:
     struct pattern* pattern;
     int n_states = a->number_of_states;
     int count = countLexicalMasks();
+    bool isDic = false;
     if(count == 0) {  // no lexical mask in this automaton
       return;
     }
-    realloc_fst2(count);
+    reallocFst2(count);
     for(int j = 0; j < n_states; j++) {
       Transition *t = a->states[j]->transitions;
       while(t != NULL) {
         // check if the input tag is a lexical mask
         if(!(t->tag_number & SUBGRAPH_PATH_MARK) && (a->tags[t->tag_number]->input[0] == '<'
           && a->tags[t->tag_number]->input[u_strlen(a->tags[t->tag_number]->input) - 1] == '>') && u_strcmp(a->tags[t->tag_number]->input, "<E>")) {
-          if(!u_strcmp(a->tags[t->tag_number]->input, "<DIC>")) {
-            //TODO
-            continue;
+          if(!u_strcmp(a->tags[t->tag_number]->input, "<DIC>")) {  // Dic case, all the entries from the morphological dictionaries will be extracted
+            isDic = true;
           }
           unichar *lexical_mask = (unichar*)malloc(sizeof(unichar) * 64);
           u_strcpy(lexical_mask, a->tags[t->tag_number]->input);
@@ -1510,7 +1510,7 @@ public:
             for(int i = 0; i < morphDicCnt; i++) {
               // extract all the entries matching the lexical_mask
               extractEntriesFromDic(p, p->morpho_dic[i], p->morpho_dic[i]->initial_state_offset, inflected, 0, 0,
-                                      new_Ustring(), new_Ustring(), pattern, allocator, lexicalMaskCnt);
+                                      new_Ustring(), new_Ustring(), pattern, allocator, lexicalMaskCnt, isDic);
             }
             free_pattern(pattern, allocator);
             if(processedLexicalMasks[lexicalMaskCnt].entriesCnt > 0) {
