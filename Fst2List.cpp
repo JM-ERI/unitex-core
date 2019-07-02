@@ -94,6 +94,10 @@ enum ModeOut {
   PR_SEPARATION, PR_TOGETHER
 }; // inputs separated from outputs vs. each input together with its output
 
+enum GrammarMode {
+  NONE, MERGE, REPLACE
+}; // no grammar mode vs outputs left inserted vs inputs replaced by outputs
+
 enum printOutType {
   GRAPH, FULL, FST2LIST_DEBUG
 }; // we either print each subgraph independently or whole automaton recursively
@@ -256,6 +260,7 @@ public:
   // either explore each subgraph independently or all the automaton recursively
   printOutType display_control; 
   initialType traitAuto; // single or multi initial state
+  GrammarMode grammarMode;
   int wordMode;
   int depthDebug;
 
@@ -789,7 +794,24 @@ public:
       //u_printf("%d %d %d %d \n",inputPtrCnt,outputPtrCnt,*suffix,count_in_line);
       if (inputPtrCnt || outputPtrCnt || *suffix || (count_in_line == 0)) {
         setOut = 1;
-        if (prMode == PR_SEPARATION) {
+        //!
+        if(grammarMode == REPLACE) {
+          wordPtr = sepL;
+          while (*wordPtr) {
+            OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
+            wordPtr++;
+          }
+          for (int i = 0; i < outputPtrCnt; i++) {
+            OUTPUTBUFFER[outBufferCnt++] = outputBuffer[i];
+          }
+          wordPtr = sepR;
+          while (*wordPtr) {
+            OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
+            wordPtr++;
+          }
+        }
+        //!
+        else if (prMode == PR_SEPARATION) {
           wordPtr = sepL;
           while (*wordPtr) {
             INPUTBUFFER[inBufferCnt++] = *wordPtr;
@@ -821,16 +843,30 @@ public:
           while (*wordPtr) {
             INPUTBUFFER[inBufferCnt++] = *wordPtr++;
           }
-          for (int i = 0; i < inputPtrCnt; i++) {
-            INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
+          if(grammarMode == MERGE) {
+              for (int i = 0; i < outputPtrCnt; i++) {
+                INPUTBUFFER[inBufferCnt++] = outputBuffer[i];
+              }
+            }
+          else {
+            for (int i = 0; i < outputPtrCnt; i++) {
+              INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
+            }
           }
           wordPtr = saveSep;
           while (*wordPtr) {
             INPUTBUFFER[inBufferCnt++] = *wordPtr++;
           }
           if (automateMode == TRANMODE) {
-            for (int i = 0; i < outputPtrCnt; i++) {
-              INPUTBUFFER[inBufferCnt++] = outputBuffer[i];
+            if(grammarMode == MERGE) {
+              for (int i = 0; i < outputPtrCnt; i++) {
+                INPUTBUFFER[inBufferCnt++] = outputBuffer[i];
+              }
+            }
+            else {
+              for (int i = 0; i < outputPtrCnt; i++) {
+                INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
+              }
             }
           }
           wordPtr = sepR;
@@ -863,9 +899,14 @@ public:
       }
       INPUTBUFFER[inBufferCnt] = 0;
       OUTPUTBUFFER[outBufferCnt] = 0;
-      u_fputs(INPUTBUFFER, foutput);
-      if ((automateMode == TRANMODE) && outBufferCnt) {
-        u_fprintf(foutput, "%S%S", saveSep, OUTPUTBUFFER);
+      if(grammarMode == REPLACE) {
+        u_fputs(OUTPUTBUFFER, foutput);
+      }
+      else {
+        u_fputs(INPUTBUFFER, foutput);
+        if ((automateMode == TRANMODE) && outBufferCnt && !(grammarMode == MERGE)) {
+          u_fprintf(foutput, "%S%S", saveSep, OUTPUTBUFFER);
+        }
       }
       if (display_control == FST2LIST_DEBUG) {
         printPathNames(foutput);
@@ -875,7 +916,24 @@ public:
       inBufferCnt = outBufferCnt = 0;
     } else { // suffix == 0
       if (inputPtrCnt || outputPtrCnt) {
-        if (prMode == PR_SEPARATION) {
+        //!
+        if(grammarMode == REPLACE) {
+          wordPtr = sepL;
+          while (*wordPtr) {
+            OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
+            wordPtr++;
+          }
+          for (int i = 0; i < outputPtrCnt; i++) {
+            OUTPUTBUFFER[outBufferCnt++] = outputBuffer[i];
+          }
+          wordPtr = sepR;
+          while (*wordPtr) {
+            OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
+            wordPtr++;
+          }
+        }
+        //!
+        else if (prMode == PR_SEPARATION) {
           wordPtr = sepL;
           while (*wordPtr) {
             INPUTBUFFER[inBufferCnt++] = *wordPtr;
@@ -908,16 +966,30 @@ public:
           while (*wordPtr) {
             INPUTBUFFER[inBufferCnt++] = *wordPtr++;
 	        }
-          for (int i = 0; i < inputPtrCnt; i++) {
-            INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
-	        }
+          if(grammarMode == MERGE) {
+              for (int i = 0; i < outputPtrCnt; i++) {
+                INPUTBUFFER[inBufferCnt++] = outputBuffer[i];
+              }
+            }
+          else {
+            for (int i = 0; i < outputPtrCnt; i++) {
+              INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
+            }
+          }
           wordPtr = saveSep;
           while (*wordPtr) {
             INPUTBUFFER[inBufferCnt++] = *wordPtr++;
 	        }
           if (automateMode == TRANMODE) {
-            for (int i = 0; i < outputPtrCnt; i++) {
-              INPUTBUFFER[inBufferCnt++] = outputBuffer[i];
+            if(grammarMode == MERGE) {
+              for (int i = 0; i < outputPtrCnt; i++) {
+                INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
+              }
+            }
+            else {
+              for (int i = 0; i < outputPtrCnt; i++) {
+                INPUTBUFFER[inBufferCnt++] = outputBuffer[i];
+              }
             }
           }
           if (recursiveMode == LABEL) {
@@ -2339,10 +2411,10 @@ int main_Fst2List(int argc, char* const argv[]) {
       //fatal_error("-D");
       break;
     case 'M':
-      //fatal_error("-M");
+      aa.grammarMode = MERGE;
       break;
     case 'R':
-      //fatal_error("-R");
+      aa.grammarMode = REPLACE;
       break;
     case 'S':
       ofilename = new char[strlen(MAGIC_OUT_STDOUT) + 1];
@@ -2381,6 +2453,7 @@ int main_Fst2List(int argc, char* const argv[]) {
       // FALLTHROUGH INTENDED
     case 't':
       aa.automateMode = (val == 't') ? TRANMODE : AUTOMODE;
+      aa.grammarMode = NONE;
       switch (options.vars()->optarg[0]) {
       case 's':
         aa.traitAuto = SINGLE;
