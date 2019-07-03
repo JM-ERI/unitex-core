@@ -32,6 +32,7 @@
 #include "Error.h"
 #include "Transitions.h"
 #include "UnitexGetOpt.h"
+#include "Dico.h"
 
 #ifndef HAS_UNITEX_NAMESPACE
 #define HAS_UNITEX_NAMESPACE 1
@@ -243,6 +244,7 @@ public:
   int invocStackIdx;  // invocation stack depth
 
   void printPathNames(U_FILE *f);
+  void setGrammarMode(char* fst2_filename, bool makeDic);
 
   int *ignoreTable;  // 1 where the automaton is ignored, else 0
   int *numOfIgnore;
@@ -1961,6 +1963,25 @@ void CFstApp::printPathNames(U_FILE *f) {
   }
 }
 
+void CFstApp::setGrammarMode(char* fst2_filename, bool makeDic) {
+  char* tmp = (char*)malloc(sizeof(char) * strlen(fst2_filename));
+  remove_extension(fst2_filename, tmp);
+  OutputPolicy outputPolicy;
+  int export_in_morpho_dic;
+  MatchPolicy matchPolicy;
+  int l = (int)strlen(tmp)-1;
+  analyse_fst2_graph_options(tmp, l, &outputPolicy, &export_in_morpho_dic, &matchPolicy);
+  if(outputPolicy == MERGE_OUTPUTS) {
+    grammarMode = MERGE;
+    prMode = PR_TOGETHER;
+  }
+  else if(outputPolicy == REPLACE_OUTPUTS) {
+    grammarMode = REPLACE;
+    prMode = PR_SEPARATION;
+
+  }
+}
+
 /**
  * takes a number (decimal or hex) in char and puts its value in 'val'
  */
@@ -2388,6 +2409,7 @@ int main_Fst2List(int argc, char* const argv[]) {
   bool only_verify_arguments = false;
   UnitexGetOpt options;
   VersatileEncodingConfig vec = VEC_DEFAULT;
+  bool makeDic = false;
 
   while (EOF!=(val=options.parse_long(argc,argv,optstring_Fst2List,lopts_Fst2List,&index))) {
     switch(val) {
@@ -2408,13 +2430,7 @@ int main_Fst2List(int argc, char* const argv[]) {
       aa.enableLoopCheck = false;
       break;
     case 'D':
-      //fatal_error("-D");
-      break;
-    case 'M':
-      aa.grammarMode = MERGE;
-      break;
-    case 'R':
-      aa.grammarMode = REPLACE;
+      makeDic = true;
       break;
     case 'S':
       ofilename = new char[strlen(MAGIC_OUT_STDOUT) + 1];
@@ -2665,6 +2681,11 @@ int main_Fst2List(int argc, char* const argv[]) {
   strcpy(fst2_filename,argv[options.vars()->optind]);
   aa.fileNameSet(argv[options.vars()->optind], ofilename);
   aa.vec = vec;
+
+  if(makeDic) {
+    aa.setGrammarMode(fst2_filename, makeDic);
+  }
+
   aa.getWordsFromGraph(changeStrToIdx, changeStrTo, fst2_filename);
   delete ofilename;
   return SUCCESS_RETURN_CODE;
