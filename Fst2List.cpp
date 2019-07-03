@@ -1978,7 +1978,6 @@ void CFstApp::setGrammarMode(char* fst2_filename, bool makeDic) {
   else if(outputPolicy == REPLACE_OUTPUTS) {
     grammarMode = REPLACE;
     prMode = PR_SEPARATION;
-
   }
 }
 
@@ -2359,7 +2358,7 @@ int CFstApp::outWordsOfGraph(int depth) {
 //
 //
 
-const char* optstring_Fst2List=":o:Sp:a:t:l:i:mdDMRf:vVhs:qr:c:g:";
+const char* optstring_Fst2List=":o:Sp:a:t:l:i:mdDf:vVhs:qr:c:g:";
 const struct option_TS lopts_Fst2List[]= {
   {"output",required_argument_TS,NULL,'o'},
   {"ignore_outputs",required_argument_TS,NULL,'a'},
@@ -2381,8 +2380,6 @@ const struct option_TS lopts_Fst2List[]= {
   {"input_encoding",required_argument_TS,NULL,'k'},
   {"output_encoding",required_argument_TS,NULL,'q'},
   {"make_dictionary",no_argument_TS,NULL,'D'},
-  {"merge_mode",no_argument_TS,NULL,'M'},
-  {"replace_mode",no_argument_TS,NULL,'R'},
   {"help",no_argument_TS,NULL,'h'},
   {NULL,no_argument_TS,NULL,0}
 };
