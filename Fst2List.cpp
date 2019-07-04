@@ -801,6 +801,7 @@ public:
   int outputPtrCnt;           // output pointer counter
   unichar INPUTBUFFER[4096];  // buffer used to print the box inputs 
   unichar OUTPUTBUFFER[4096]; // buffer used to print the box outputs
+  unichar dest[1024];
   int inBufferCnt;            // buffer counter for box inputs
   int outBufferCnt;           // buffer counter for box outputs
 
@@ -916,7 +917,11 @@ public:
       }
       INPUTBUFFER[inBufferCnt] = 0;
       OUTPUTBUFFER[outBufferCnt] = 0;
-	
+
+      Alphabet* a = new_alphabet(1);
+      Korean* k = new Korean(a);
+      Hanguls_to_Jamos(INPUTBUFFER,dest,k,1);
+      convert_jamo_to_hangul(dest,INPUTBUFFER,k);     
       u_fputs(INPUTBUFFER, foutput);
       if ((automateMode == TRANMODE) && outBufferCnt) {
         u_fprintf(foutput, "%S%S", saveSep, OUTPUTBUFFER);
