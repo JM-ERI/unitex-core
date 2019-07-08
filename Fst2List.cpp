@@ -920,7 +920,9 @@ public:
 
       Alphabet* a = new_alphabet(1);
       Korean* k = new Korean(a);
+      u_fprintf(foutput, "%S@", INPUTBUFFER);
       Hanguls_to_Jamos(INPUTBUFFER,dest,k,1);
+      u_fprintf(foutput, "%S@", dest);
       convert_jamo_to_hangul(dest,INPUTBUFFER,k);     
       u_fputs(INPUTBUFFER, foutput);
       if ((automateMode == TRANMODE) && outBufferCnt) {
