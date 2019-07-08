@@ -276,6 +276,7 @@ public:
   char ofExt[16];
   char ofnameOnly[512];        // output file name
   char defaultIgnoreName[512]; // input file name
+  bool isMdg = false;
 
   void fileNameSet(char *ifn, char *ofn) {
     char tmp[512];
@@ -793,22 +794,28 @@ public:
     }
     if (suffix) {
       setOut = 0;
-      //u_printf("%d %d %d %d \n",inputPtrCnt,outputPtrCnt,*suffix,count_in_line);
       if (inputPtrCnt || outputPtrCnt || *suffix || (count_in_line == 0)) {
         setOut = 1;
         if (prMode == PR_SEPARATION) {
-          wordPtr = sepL;
-          while (*wordPtr) {
-            INPUTBUFFER[inBufferCnt++] = *wordPtr;
-            if (automateMode == TRANMODE) {
-              OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
+          if(inputPtrCnt) {
+            wordPtr = sepL;
+            while (*wordPtr) {
+              INPUTBUFFER[inBufferCnt++] = *wordPtr;
+              if (automateMode == TRANMODE) {
+                OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
+              }
+              wordPtr++;
             }
-            wordPtr++;
+            for (int i = 0; i < inputPtrCnt; i++) {
+              INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
+            }
+            wordPtr = sepR;
+            while (*wordPtr) {
+              INPUTBUFFER[inBufferCnt++] = *wordPtr;
+              wordPtr++;
+            }
           }
-          for (int i = 0; i < inputPtrCnt; i++) {
-            INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
-	        }
-          if (automateMode == TRANMODE) {
+          if (automateMode == TRANMODE && !(grammarMode == REPLACE && inputPtrCnt &&!isMdg)) {
             for (int i = 0; i < outputPtrCnt; i++) {
               OUTPUTBUFFER[outBufferCnt++] = outputBuffer[i];
               if(grammarMode == MERGE) {
@@ -818,28 +825,18 @@ public:
               }
             }
           }
-          wordPtr = sepR;
-          while (*wordPtr) {
-            if (inputPtrCnt) {
-              INPUTBUFFER[inBufferCnt++] = *wordPtr;
-            }
-            if (automateMode == TRANMODE) {
-              OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
-            }
-            wordPtr++;
-          }
         } else {
           wordPtr = sepL;
           while (*wordPtr) {
             INPUTBUFFER[inBufferCnt++] = *wordPtr++;
           }
           if(grammarMode == MERGE) {
-              for (int i = 0; i < outputPtrCnt; i++) {
-                INPUTBUFFER[inBufferCnt++] = outputBuffer[i];
-              }
-            }
-          else {
             for (int i = 0; i < outputPtrCnt; i++) {
+              INPUTBUFFER[inBufferCnt++] = outputBuffer[i];
+            }
+          }
+          else {
+            for (int i = 0; i < inputPtrCnt; i++) {
               INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
             }
           }
@@ -854,7 +851,7 @@ public:
               }
             }
             else {
-              for (int i = 0; i < outputPtrCnt; i++) {
+              for (int i = 0; i < inputPtrCnt; i++) {
                 INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
               }
             }
@@ -887,10 +884,10 @@ public:
           }
         }
       }
-      INPUTBUFFER[inBufferCnt] = 0;
-      OUTPUTBUFFER[outBufferCnt] = 0;
+      INPUTBUFFER[inBufferCnt-1] = 0;
       u_fputs(INPUTBUFFER, foutput);
       if ((automateMode == TRANMODE) && outBufferCnt) {
+        OUTPUTBUFFER[outBufferCnt] = 0;
         u_fprintf(foutput, "%S%S", saveSep, OUTPUTBUFFER);
       }
       if (display_control == FST2LIST_DEBUG) {
@@ -902,18 +899,25 @@ public:
     } else { // suffix == 0
       if (inputPtrCnt || outputPtrCnt) {
         if (prMode == PR_SEPARATION) {
-          wordPtr = sepL;
-          while (*wordPtr) {
-            INPUTBUFFER[inBufferCnt++] = *wordPtr;
-            if (automateMode == TRANMODE) {
-              OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
+          if(inputPtrCnt) {
+            wordPtr = sepL;
+            while (*wordPtr) {
+              INPUTBUFFER[inBufferCnt++] = *wordPtr;
+              if (automateMode == TRANMODE) {
+                OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
+              }
+              wordPtr++;
             }
-            wordPtr++;
+            for (int i = 0; i < inputPtrCnt; i++) {
+              INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
+            }
+            wordPtr = sepR;
+            while (*wordPtr) {
+              INPUTBUFFER[inBufferCnt++] = *wordPtr;
+              wordPtr++;
+            }
           }
-          for (int i = 0; i < inputPtrCnt; i++) {
-            INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
-          }
-          if (automateMode == TRANMODE) {
+          if (automateMode == TRANMODE && !(grammarMode == REPLACE && inputPtrCnt &&!isMdg)) {
             for (int i = 0; i < outputPtrCnt; i++) {
               OUTPUTBUFFER[outBufferCnt++] = outputBuffer[i];
               if(grammarMode == MERGE) {
@@ -926,26 +930,18 @@ public:
           //        if(recursiveMode == LABEL){
           //          wordPtr = openingQuote;while(*wordPtr)  INPUTBUFFER[inBufferCnt++] = *wordPtr++;
           //          }
-          wordPtr = sepR;
-          while (*wordPtr) {
-            INPUTBUFFER[inBufferCnt++] = *wordPtr;
-            if (automateMode == TRANMODE) {
-              OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
-            }
-            wordPtr++;
-          }
         } else {
           wordPtr = sepL;
           while (*wordPtr) {
             INPUTBUFFER[inBufferCnt++] = *wordPtr++;
 	        }
           if(grammarMode == MERGE) {
-              for (int i = 0; i < outputPtrCnt; i++) {
-                INPUTBUFFER[inBufferCnt++] = outputBuffer[i];
-              }
-            }
-          else {
             for (int i = 0; i < outputPtrCnt; i++) {
+              INPUTBUFFER[inBufferCnt++] = outputBuffer[i];
+            }
+          }
+          else {
+            for (int i = 0; i < inputPtrCnt; i++) {
               INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
             }
           }
@@ -955,7 +951,7 @@ public:
 	        }
           if (automateMode == TRANMODE) {
             if(grammarMode == MERGE) {
-              for (int i = 0; i < outputPtrCnt; i++) {
+              for (int i = 0; i < inputPtrCnt; i++) {
                 INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
               }
             }
@@ -972,8 +968,10 @@ public:
             }
           }
           wordPtr = sepR;
-          while (*wordPtr) {
-            INPUTBUFFER[inBufferCnt++] = *wordPtr++;
+          if(inBufferCnt) {
+            while (*wordPtr) {
+              INPUTBUFFER[inBufferCnt++] = *wordPtr++;
+            }
           }
         }
         count_in_line++;
@@ -2032,12 +2030,18 @@ int CFstApp::outWordsOfGraph(int depth) {
       inputBufferPtr = (u_strcmp(Tag->input, u_epsilon_string)) ? 
               Tag->input : u_null_string;
       if (Tag->output != NULL) {
-        outputBufferPtr = (u_strcmp(Tag->output, u_epsilon_string)) ? 
+        if(!u_strcmp(Tag->output, "/") && !isMdg) {  // if the output is '/', it's a MDG, this output is not put in the outputfile
+          isMdg = true;
+        }
+        else{
+          outputBufferPtr = (u_strcmp(Tag->output, u_epsilon_string)) ?
                 Tag->output : u_null_string;
+        }
       } else {
         outputBufferPtr = u_null_string;
       }
     }
+
     //wprintf(L"{%d,%x,%x,%s,%s}",s,pathStack[s].stateNo,pathStack[s].tag,inputBufferPtr,outputBufferPtr);
     markCtlChar = 0;
     // mark control character
