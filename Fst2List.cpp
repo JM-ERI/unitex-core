@@ -1330,7 +1330,6 @@ void CFstApp::loadGraph(int& changeStrToIdx, unichar changeStrTo[][MAX_CHANGE_SY
   if (a == NULL) {
     fatal_error("Cannot load graph file %s\n", fname);
   }
-
   // mark the automaton transitions that invoke subgraphs
   for (i_1 = 0; i_1 < a->number_of_states; i_1++) {
     transPtr = a->states[i_1]->transitions;
@@ -1345,14 +1344,12 @@ void CFstApp::loadGraph(int& changeStrToIdx, unichar changeStrTo[][MAX_CHANGE_SY
       transPtr = transPtr->next;
     }
   }
-
   ignoreTable = new int[a->number_of_graphs + 1];
   numOfIgnore = new int[a->number_of_graphs + 1];
   for (i_1 = 1; i_1 <= a->number_of_graphs; i_1++) {
     ignoreTable[i_1] = 0;
     numOfIgnore[i_1] = 0;
   }
-
   if (stopSubListIdx) {   // set table of ignored graphs
     for (i_1 = 0; i_1 < stopSubListIdx; i_1++) {
       for (j_1 = 1; j_1 <= a->number_of_graphs; j_1++) {
@@ -1935,7 +1932,7 @@ void CFstApp::printPathNames(U_FILE *f) {
 void CFstApp::setGrammarMode(char* fst2_filename, bool makeDic) {
   char* tmp = (char*)malloc(sizeof(char) * strlen(fst2_filename));
   remove_extension(fst2_filename, tmp);
-  OutputPolicy outputPolicy;
+  OutputPolicy outputPolicy = MERGE_OUTPUTS;
   int export_in_morpho_dic;
   MatchPolicy matchPolicy;
   int l = (int)strlen(tmp)-1;
@@ -2041,7 +2038,6 @@ int CFstApp::outWordsOfGraph(int depth) {
         outputBufferPtr = u_null_string;
       }
     }
-
     //wprintf(L"{%d,%x,%x,%s,%s}",s,pathStack[s].stateNo,pathStack[s].tag,inputBufferPtr,outputBufferPtr);
     markCtlChar = 0;
     // mark control character
