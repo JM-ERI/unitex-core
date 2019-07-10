@@ -832,11 +832,7 @@ public:
     wordPtr = sepR;
     if(!inMorphoMode) {
       while (*wordPtr) {
-        INPUTBUFFER[inBufferCnt++] = *wordPtr;
-        if (automateMode == TRANMODE) {
-          OUTPUTBUFFER[outBufferCnt++] = *wordPtr;
-        }
-        wordPtr++;
+        INPUTBUFFER[inBufferCnt++] = *wordPtr++;
       }
     }
   }
@@ -870,17 +866,14 @@ public:
             for (int i = 0; i < inputPtrCnt; i++) {
               INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
             }
-            wordPtr = sepR;
-            while (*wordPtr) {
-              INPUTBUFFER[inBufferCnt++] = *wordPtr;
-              wordPtr++;
-            }
+            appendSingleSpace();
           }
           if (automateMode == TRANMODE && !(grammarMode == REPLACE && inputPtrCnt &&!isMdg)) {
             for (int i = 0; i < outputPtrCnt; i++) {
               OUTPUTBUFFER[outBufferCnt++] = outputBuffer[i];
               if(grammarMode == MERGE) {
                 for (int i = 0; i < inputPtrCnt; i++) {
+                  u_fprintf(foutput, "suffix! in : %S , IN : %S, in -> out : \n", inputBuffer, INPUTBUFFER);
                   OUTPUTBUFFER[outBufferCnt++] = inputBuffer[i];
                 }
               }
@@ -917,10 +910,7 @@ public:
               }
             }
           }
-          wordPtr = sepR;
-          while (*wordPtr) {          	
-            INPUTBUFFER[inBufferCnt++] = *wordPtr++;
-          }
+          appendSingleSpace();
         }
       } // condition de out
       if ((recursiveMode == LABEL) && setOut) {
@@ -976,19 +966,17 @@ public:
             for (int i = 0; i < inputPtrCnt; i++) {
               INPUTBUFFER[inBufferCnt++] = inputBuffer[i];
             }
-            wordPtr = sepR;
-            while (*wordPtr) {
-              INPUTBUFFER[inBufferCnt++] = *wordPtr;
-              wordPtr++;
-            }
+            appendSingleSpace();
           }
           if (automateMode == TRANMODE && !(grammarMode == REPLACE && inputPtrCnt &&!isMdg)) {
             for (int i = 0; i < outputPtrCnt; i++) {
               OUTPUTBUFFER[outBufferCnt++] = outputBuffer[i];
               if(grammarMode == MERGE) {
+                u_fprintf(foutput, "OUT BEFORE : %S , ", OUTPUTBUFFER);
                 for (int i = 0; i < inputPtrCnt; i++) {
-                  OUTPUTBUFFER[outBufferCnt++] = inputBuffer[i];
+                  OUTPUTBUFFER[outBufferCnt++] = inputBuffer[i];                 
                 }
+                u_fprintf(foutput, "in : %S , IN : %S , OUT AFTER : %S\n", inputBuffer, INPUTBUFFER, OUTPUTBUFFER);
               }
             }
           }
@@ -1032,12 +1020,7 @@ public:
               INPUTBUFFER[inBufferCnt++] = *wordPtr++;
             }
           }
-          wordPtr = sepR;
-          if(inBufferCnt) {
-            while (*wordPtr) {
-              INPUTBUFFER[inBufferCnt++] = *wordPtr++;
-            }
-          }
+          appendSingleSpace();
         }
         count_in_line++;
       }
