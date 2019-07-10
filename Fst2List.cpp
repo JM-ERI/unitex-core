@@ -976,11 +976,10 @@ public:
               INPUTBUFFER[inBufferCnt++] = *wordPtr++;
             }
           }
-          /*wordPtr = sepR;
+          wordPtr = sepR;
           while (*wordPtr) {
             INPUTBUFFER[inBufferCnt++] = *wordPtr++;
-          }*/
-          outOneSpace();
+          }
         }
         count_in_line++;
       }
@@ -2595,7 +2594,7 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
 //
 //
 
-const char* optstring_Fst2List=":o:Sp:a:t:l:i:mdf:vVKhs:qr:c:g:";
+const char* optstring_Fst2List=":o:Sp:a:t:l:i:mdf:vVKhs:qr:c:g:D:";
 const struct option_TS lopts_Fst2List[]= {
   {"output",required_argument_TS,NULL,'o'},
   {"ignore_outputs",required_argument_TS,NULL,'a'},
