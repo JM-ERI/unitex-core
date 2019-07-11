@@ -1351,12 +1351,9 @@ public:
     if (final) {  // if the current state is final, uncompress the entry to obtain the gramatical label
       inflected[pos_in_inflected] = '\0';
 
-      //Korean
-      unichar* dest = (unichar*)malloc(sizeof(unichar) * 64);
-      Alphabet* a = new_alphabet(1);
-      Korean* k = new Korean(a);
-      convert_jamo_to_hangul(inflected, dest, k);
-      //
+      if(isKorean) {
+        convert_jamo_to_hangul(inflected, jamos, korean);
+      }
 
       struct list_ustring* tmp = d->inf->codes[inf_number];
       uncompress_entry(inflected, tmp->string, line_buffer);
@@ -1373,12 +1370,12 @@ public:
         unichar* entry = line_buffer->str;
         token = u_strtok_r(entry, delimiter, &entry);  // input
 
-        //Korean
-        if(u_strlen(dest) > 0) {
-          processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input = u_strdup(dest);
-        }//
-        else
+        if(isKorean && u_strlen(jamos) > 0) {
+          processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input = u_strdup(jamos);
+        }
+        else {
           processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt].input = u_strdup(token);
+        }
         token = u_strtok_r(entry, delimiter, &entry);  // output
         processedLexicalMasks[index].entries[processedLexicalMasks[index].entriesCnt++].output = u_strdup(token); 
       }
