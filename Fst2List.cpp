@@ -871,11 +871,10 @@ public:
           if (automateMode == TRANMODE && !(grammarMode == REPLACE && inputPtrCnt &&!isMdg)) {
             for (int i = 0; i < outputPtrCnt; i++) {
               OUTPUTBUFFER[outBufferCnt++] = outputBuffer[i];
-              if(grammarMode == MERGE) {
-                for (int i = 0; i < inputPtrCnt; i++) {
-                  u_fprintf(foutput, "suffix! in : %S , IN : %S, in -> out : \n", inputBuffer, INPUTBUFFER);
-                  OUTPUTBUFFER[outBufferCnt++] = inputBuffer[i];
-                }
+            }
+            if(grammarMode == MERGE) {
+              for (int i = 0; i < inputPtrCnt; i++) {
+                OUTPUTBUFFER[outBufferCnt++] = inputBuffer[i];
               }
             }
           }
@@ -971,12 +970,10 @@ public:
           if (automateMode == TRANMODE && !(grammarMode == REPLACE && inputPtrCnt &&!isMdg)) {
             for (int i = 0; i < outputPtrCnt; i++) {
               OUTPUTBUFFER[outBufferCnt++] = outputBuffer[i];
-              if(grammarMode == MERGE) {
-                u_fprintf(foutput, "OUT BEFORE : %S , ", OUTPUTBUFFER);
-                for (int i = 0; i < inputPtrCnt; i++) {
-                  OUTPUTBUFFER[outBufferCnt++] = inputBuffer[i];                 
-                }
-                u_fprintf(foutput, "in : %S , IN : %S , OUT AFTER : %S\n", inputBuffer, INPUTBUFFER, OUTPUTBUFFER);
+            }
+            if(grammarMode == MERGE) {
+              for (int i = 0; i < inputPtrCnt; i++) {
+                OUTPUTBUFFER[outBufferCnt++] = inputBuffer[i];
               }
             }
           }
