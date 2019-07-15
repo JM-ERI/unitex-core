@@ -1339,13 +1339,86 @@ public:
     }
   }
 
-
-  void updateVariablesInputs() {
+  /**
+  * FAUX
+  **/
+  void outVariableContent(unichar *variableName, unichar* output, int start) {
     for(int i = 0; i < variableCnt; i++) {
-      if(variables[i].inVarDef) {
-        //TODO
+      if(!u_strcmp(variableName, variables[i].name)) {
+        //u_fprintf(foutput, "VARIABLE FOUND TO PRINT\n");
+        if(prMode == PR_SEPARATION) {
+          for(int j = 0; j < start; j++) {
+            OUTPUTBUFFER[outBufferCnt++] = output[j];
+          }
+          for(int j = 0; j < (int)u_strlen(variables[i].input); j++) {
+            OUTPUTBUFFER[outBufferCnt++] = variables[i].input[j];
+          }
+          for(int j = start + (int)u_strlen(variableName) + 2; j < (int)u_strlen(output); j++) {
+            OUTPUTBUFFER[outBufferCnt++] = output[j];
+          }
+        }
+        else {
+          for(int j = 0; j < start; j++) {
+            INPUTBUFFER[inBufferCnt++] = output[j];
+          }
+          for(int j = 0; j < (int)u_strlen(variables[i].input); j++) {
+            INPUTBUFFER[inBufferCnt++] = variables[i].input[j];
+            //u_fprintf(foutput, "inputbuffer : %S\n", INPUTBUFFER);
+          }
+          for(int j = start + (int)u_strlen(variableName) + 2; j < (int)u_strlen(output); j++) {
+            INPUTBUFFER[inBufferCnt++] = output[j];
+          }
+        }
       }
     }
+  }
+
+  /**
+  * A TESTER / INUTILE?
+  **/
+  bool containsVarCall(unichar *output, unichar* varName, int* startVar) {
+    bool inVarName = false;
+    int j = 0;
+    for(int i = 0; i < (int)u_strlen(output); i++) {
+      if(inVarName) {
+        varName[j++] = output[i];
+      }
+      if(output[i] == (unichar)'$') {
+        if(inVarName == false) {
+          inVarName = true;
+          *startVar = i;
+        }
+        else {
+          inVarName = true;
+          varName[j-1] = (unichar)'\0';
+          return true;
+        }
+      }
+    } 
+    return false;
+  }
+
+  /**
+  * concat the current input into the activated variables
+  **/
+  bool updateVariablesInputs(unichar* input, unichar* output) {
+    bool processOutput = true;
+    for(int i = 0; i < variableCnt; i++) {
+      if(variables[i].inVarDef) {
+        if(variables[i].type == INPUT) {
+          u_strcat(variables[i].input, input);
+          if(!inMorphoMode) {
+            u_strcat(variables[i].input, " ");
+          }
+        }
+        else if(variables[i].type == OUTPUT) {
+          u_strcat(variables[i].input, output);
+          processOutput = false;
+        }
+        //u_fprintf(foutput, "update var %d : %S -> %S\n", i, input, variables[i].input);
+      }
+    }
+    return processOutput;
   }
 
   /**
@@ -1370,6 +1443,9 @@ public:
     for(int i = 0; i < variableCnt; i++) {
       if(!u_strcmp(name, variables[i].name)) {
         variables[i].inVarDef = mode;
+        if(mode) {
+          variables[i].input[0] = '\0';
+        }
         /*if(mode == true)
           u_fprintf(foutput, "variable : %S of index %d, is ON!\n", variables[i].name, i);
         else
@@ -1407,6 +1483,9 @@ public:
       variables = (Variable*)realloc(variables, sizeof(Variable) * maxVariableCnt);
       if(variables == NULL) {
         fatal_error("Realloc error in addVariable for variables");
+      }
+      for(int i = variableCnt; i < maxVariableCnt; i++) {
+        variables[i].input[0] = '\0';
       }
     }
     u_strcpy(variables[variableCnt].name, name);
@@ -1843,7 +1922,9 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
   if(variables == NULL) {
     fatal_error("Malloc error for variables in getWordsFromGraph");
   }
-
+  for(int j = 0; j < maxVariableCnt; j++) {
+    variables[j].input[0] = '\0';
+  }
 
   //Checks the automaton's tags to find lexical masks
   check_lexical_masks();
@@ -2397,14 +2478,17 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
   unichar *inputBufferPtr;  // input buffer ptr
   unichar *outputBufferPtr;  // transducer buffer ptr
   unichar *chp;
+  unichar variableName[1024];
   int indicateFirstUsed;
   int i;
   int markCtlChar, markPreCtlChar;
+  int startVar = -1;
   depthDebug = pathIdx;
   inBufferCnt = outBufferCnt = 0;
   inputPtrCnt = outputPtrCnt = 0;
   unichar aaBuffer_for_getLabelNumber[64];
   bool isWord;  // false if the tag content is not a word (like $< or $>)
+  bool processOutput = true;
   //  fini = (tagQ[tagQidx - 1] & (SUBGRAPH_PATH_MARK | LOOP_PATH_MARK)) ?
   //    tagQ[tagQidx -1 ]:0;
   //
@@ -2449,7 +2533,8 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
           processEndVariableTag(Tag->input, INPUT);
           break;
         case UNDEFINED_TAG:
-          u_fprintf(foutput, "undefined tag : %S\n", Tag->input);
+          processOutput = updateVariablesInputs(Tag->input, Tag->output);
+          //u_fprintf(foutput, "input : %S, output : %S -> processOut : %d\n", Tag->input, Tag->output, processOutput);
           isWord = true;
           break;
         default :
@@ -2460,9 +2545,13 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
       if(isWord) {
         inputBufferPtr = (u_strcmp(Tag->input, u_epsilon_string)) ? 
                 Tag->input : u_null_string;
-        if (Tag->output != NULL) {
+        if (Tag->output != NULL && processOutput) {
           if(!u_strcmp(Tag->output, "/") && !isMdg) {  // if the output is '/', it's a MDG, this output is not put in the outputfile
             isMdg = true;
+          }
+          else if(containsVarCall(Tag->output, variableName, &startVar)) {
+            u_fprintf(foutput, "variableName : %S, start at : %d\n", variableName, startVar);
+            outVariableContent(variableName, Tag->output, startVar);
           }
           else{
             outputBufferPtr = (u_strcmp(Tag->output, u_epsilon_string)) ?
