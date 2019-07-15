@@ -116,6 +116,9 @@ enum presentCycleValue {
 enum autoType {
   AUTOMODE, TRANMODE
 };
+enum varType {
+  INPUT, OUTPUT, DIC
+};
 
 static unichar *uascToNum(unichar *uasc, int *val);
 
@@ -511,10 +514,20 @@ public:
   * structure to represent all the processed lexical masks
   */
   struct ProcessedLexicalMask {
-      LexicalMask lexicalMask;    // represents the lexical mask with the corresponding input and output
-      DicEntry *entries;          // represents the box's content by entries extracted from morphological dic
-      int maxEntriesCnt;          // max number of element in entries array, usefull to reallocation
-      int entriesCnt;             // number of entries in entries
+    LexicalMask lexicalMask;    // represents the lexical mask with the corresponding input and output
+    DicEntry *entries;          // represents the box's content by entries extracted from morphological dic
+    int maxEntriesCnt;          // max number of element in entries array, usefull to reallocation
+    int entriesCnt;             // number of entries in entries
+  };
+
+  /**
+  * save all the informations about a variable found in the fst2
+  */
+  struct Variable {
+    unichar input[4096];  // entry saved in the variable definition
+    unichar name[64];  // entry saved in the variable definition
+    varType type;  // variable type (see varType)
+    bool inVarDef;  // true if the current state is in the variable definition zone and false in the other case
   };
 
   /**
@@ -818,7 +831,11 @@ public:
 
   ProcessedLexicalMask *processedLexicalMasks;
   int lexicalMaskCnt;
-  int maxLexicalMaskCnt = 8;      
+  int maxLexicalMaskCnt = 8;
+
+  Variable *variables;
+  int variableCnt;
+  int maxVariableCnt = 8;
 
   void resetBufferCounters() {
     inputPtrCnt = outputPtrCnt = inBufferCnt = outBufferCnt = 0;
@@ -1320,7 +1337,84 @@ public:
     if (pos > p->last_tested_position) {
       p->last_tested_position = pos;
     }
-  } 
+  }
+
+
+  void updateVariablesInputs() {
+    for(int i = 0; i < variableCnt; i++) {
+      if(variables[i].inVarDef) {
+        //TODO
+      }
+    }
+  }
+
+  /**
+  * Remove the meta symbols like '$' or '|' from the input to extract the variable's name
+  * Put the variable's name in 'name'
+  **/
+  void extractVarNameFromInput(unichar* input, varType type, unichar** name) {
+    (*name)[u_strlen(*name) - 1] = (unichar)'\0';
+    if(type == INPUT || type == DIC)
+      (*name)++;
+    else if(type == OUTPUT)
+      (*name) += 2;
+  }
+
+  /**
+  * Return true if the variable exists and false in the other case
+  * If the variable exists, inVarDef is set according the given mode :
+  * true : begin variable tag
+  * false : end variable tag
+  **/
+  bool setVariable(unichar *name, bool mode) {
+    for(int i = 0; i < variableCnt; i++) {
+      if(!u_strcmp(name, variables[i].name)) {
+        variables[i].inVarDef = mode;
+        /*if(mode == true)
+          u_fprintf(foutput, "variable : %S of index %d, is ON!\n", variables[i].name, i);
+        else
+          u_fprintf(foutput, "variable : %S of index %d, is OFF!\n", variables[i].name, i);*/
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+  * When a end variable tag is found, the inVarDef is set on false to stop to save the input tags
+  **/
+  void processEndVariableTag(unichar *input, varType type) {
+    unichar *name = u_strdup(input);
+    extractVarNameFromInput(input, type, &name);
+    setVariable(name, false);
+  }
+
+  /**
+  * When a begin variable tag is found, set inVarDef to true if this variable exists
+  * In the other case, add the variable in the variables array to process it
+  * input is the box input that contains the name of the variable
+  * type is the variable's type (see varType)
+  **/
+  void processBeginVariableTag(unichar *input, varType type) {
+    unichar *name = u_strdup(input);
+    extractVarNameFromInput(input, type, &name);
+    if(setVariable(name, true)) {
+      return;
+    }
+    // the variable doesnt' exist
+    if(variableCnt >= maxVariableCnt) {
+      maxVariableCnt *= 2;
+      variables = (Variable*)realloc(variables, sizeof(Variable) * maxVariableCnt);
+      if(variables == NULL) {
+        fatal_error("Realloc error in addVariable for variables");
+      }
+    }
+    u_strcpy(variables[variableCnt].name, name);
+    variables[variableCnt].type = type;
+    variables[variableCnt].inVarDef = true;
+    //u_fprintf(foutput, "Creation of variable : %S, of type : %d with index : %d\n", variables[variableCnt].name, variables[variableCnt].type, variableCnt);
+    variableCnt++;
+  }
 
   /**
     * check if the given lexical mask is already processed
@@ -1459,6 +1553,7 @@ public:
     }
     return count;
   }
+
 
   /**
   * reallocate each pointer whose size depends on the number of graphs
@@ -1744,6 +1839,11 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
   if(processedLexicalMasks == NULL) {
     fatal_error("Malloc error for processedLexicalMasks in getWordsFromGraph");
   }
+  variables = (Variable*)malloc(sizeof(Variable) * maxVariableCnt);
+  if(variables == NULL) {
+    fatal_error("Malloc error for variables in getWordsFromGraph");
+  }
+
 
   //Checks the automaton's tags to find lexical masks
   check_lexical_masks();
@@ -2329,14 +2429,27 @@ int CFstApp::outWordsOfGraph(int currentDepth, int depth) {
       Tag = a->tags[pathStack[s].tag & SUB_ID_MASK];
       isWord = false;
       switch (Tag->type) { // check if the current node is a morphological begin or end, and update the boolean to begin/stop the morphological mode
-        case BEGIN_MORPHO_TAG :  
+        case BEGIN_MORPHO_TAG :
           inMorphoMode = true;
           break;
         case END_MORPHO_TAG :
           inMorphoMode = false;
           appendSingleSpace(); // insert one space between the last word of the morphological mode and the next word
           continue;
+        case BEGIN_OUTPUT_VAR_TAG :
+          processBeginVariableTag(Tag->input, OUTPUT);
+          break;
+        case BEGIN_VAR_TAG :
+          processBeginVariableTag(Tag->input, INPUT);
+          break;
+        case END_OUTPUT_VAR_TAG :
+          processEndVariableTag(Tag->input, OUTPUT);
+          break;
+        case END_VAR_TAG :
+          processEndVariableTag(Tag->input, INPUT);
+          break;
         case UNDEFINED_TAG:
+          u_fprintf(foutput, "undefined tag : %S\n", Tag->input);
           isWord = true;
           break;
         default :
