@@ -37,6 +37,7 @@
 #include "MorphologicalLocate.h"
 #include "Korean.h"
 #include "Dico.h"
+#include "TransductionStack.h"
 
 #ifndef HAS_UNITEX_NAMESPACE
 #define HAS_UNITEX_NAMESPACE 1
@@ -798,6 +799,7 @@ public:
   int outBufferCnt;           // buffer counter for box outputs
   Alphabet *alphabet = NULL;
   Korean *korean = NULL;
+  OutputVariables *input_variables = NULL;
   ProcessedLexicalMask *processedLexicalMasks = NULL;  // represents a lexical mask by his input, output and number of matches in binary dictionaries
   int lexicalMaskCnt = 0;  // number of processed lexical masks
   int maxLexicalMaskCnt = 8;
@@ -934,6 +936,9 @@ public:
       u_fprintf(foutput, "\n");
       numberOfOutLine++;
       inBufferCnt = outBufferCnt = 0;
+      // the input and outputs variables must be emptied, otherwise, the next content of the variables will be concatened
+      empty_non_pending_variables(input_variables);
+      empty_non_pending_variables(p->output_variables);
     } else { // suffix == 0
       if (inputPtrCnt || outputPtrCnt) {
         if (prMode == PR_SEPARATION) {
@@ -1723,6 +1728,11 @@ int CFstApp::getWordsFromGraph(int &changeStrToIdx, unichar changeStrTo[][MAX_CH
   if(processedLexicalMasks == NULL) {
     fatal_error("Malloc error for processedLexicalMasks in getWordsFromGraph");
   }
+  input_variables = new_OutputVariables(a->input_variables, 0, NULL);
+  p->output_variables = new_OutputVariables(a->output_variables, 0, NULL);
+  p->input_variables = new_Variables(NULL, 0);
+  p->dic_variables = NULL;
+  p->variable_error_policy = EXIT_ON_VARIABLE_ERRORS;
   //Checks the automaton's tags to find lexical masks
   check_lexical_masks();
   switch (display_control) {
@@ -2293,7 +2303,9 @@ int CFstApp::outWordsOfGraph(int depth) {
   inBufferCnt = outBufferCnt = 0;
   inputPtrCnt = outputPtrCnt = 0;
   unichar aaBuffer_for_getLabelNumber[64];
+  unichar *var_dic_name = NULL;
   bool isWord;  // false if the tag content is not a word (like $< or $>)
+  int res;
 
   //  fini = (tagQ[tagQidx - 1] & (SUBGRAPH_PATH_MARK | LOOP_PATH_MARK)) ?
   //    tagQ[tagQidx -1 ]:0;
@@ -2306,7 +2318,7 @@ int CFstApp::outWordsOfGraph(int depth) {
   //printPathStack();
 
   for (s = 0; s < pathIdx; s++) {
-
+    res = -1;
     inputBuffer[inputPtrCnt] = outputBuffer[outputPtrCnt] = 0;
     if (!pathStack[s].tag) {
       inputBufferPtr = outputBufferPtr = u_null_string;
@@ -2321,15 +2333,33 @@ int CFstApp::outWordsOfGraph(int depth) {
       }
       isWord = false;
       switch (Tag->type) { // check if the current node is a morphological begin or end, and update the boolean to begin/stop the morphological mode
-        case BEGIN_MORPHO_TAG :  
+        case BEGIN_MORPHO_TAG :
           inMorphoMode = true;
           break;
         case END_MORPHO_TAG :
           inMorphoMode = false;
           appendSingleSpace(); // insert one space between the last word of the morphological mode and the next word
           continue;
+        case BEGIN_OUTPUT_VAR_TAG :
+          set_output_variable_pending(p->output_variables,Tag->variable);
+          break;
+        case END_OUTPUT_VAR_TAG :
+          unset_output_variable_pending(p->output_variables,Tag->variable);
+          break;
+        case BEGIN_VAR_TAG :
+          set_output_variable_pending(input_variables,Tag->variable);
+          break;
+        case END_VAR_TAG :
+          unset_output_variable_pending(input_variables,Tag->variable);
+          break;
         case UNDEFINED_TAG:
           isWord = true;
+          if(p->output_variables->pending != NULL) {
+            res = add_raw_string_to_output_variables(p->output_variables, Tag->output);
+          }
+          if(input_variables->pending != NULL) {
+            res = add_raw_string_to_output_variables(input_variables, Tag->input);
+          }
           break;
         default :
           break;
@@ -2340,10 +2370,44 @@ int CFstApp::outWordsOfGraph(int depth) {
         inputBufferPtr = (u_strcmp(Tag->input, u_epsilon_string)) ? 
                 Tag->input : u_null_string;
         if (Tag->output != NULL) {
+	//u_printf("process output : %S/%S %S\n", Tag->input, Tag->output, var_dic_name);
           outputBufferPtr = (u_strcmp(Tag->output, u_epsilon_string)) ? Tag->output : u_null_string;
           if(!u_strcmp(Tag->output, "/")) {  // if the output is '/', it's a MDG, this output is ignored
             isMdg = true;
             outputBufferPtr = u_null_string;
+          }
+          else if(res > 0) {
+            outputBufferPtr = u_null_string;
+          }
+          else{
+		//u_printf("3 %C %C %p\n", Tag->output[0], Tag->output[u_strlen(Tag->output) - 1], Tag->dela_entry);
+            if(Tag->dela_entry != NULL && Tag->output[0] == (unichar)'$'
+            && Tag->output[u_strlen(Tag->output) - 1] == (unichar)'$') 
+            {  //if the tag contains a dela_entry and if the output contains a variable name, put that dela_entry in the dic_var
+		//u_printf("process output : %S/%S %S\n", Tag->input, Tag->output, var_dic_name);
+              var_dic_name = u_strdup(Tag->output);
+              var_dic_name[u_strlen(Tag->output) -1] = '\0';
+              var_dic_name++;
+              set_dic_variable(var_dic_name, Tag->dela_entry, &(p->dic_variables), 1);
+              if(grammarMode == NONE)
+                outputBufferPtr = Tag->dela_entry->inflected;
+              else if(grammarMode == MERGE) {
+                inputBufferPtr = Tag->dela_entry->inflected;
+                outputBufferPtr = u_null_string;
+              }
+              else if(grammarMode == REPLACE) {  //UNSURE
+                inputBufferPtr = Tag->dela_entry->inflected;
+                outputBufferPtr = u_null_string;
+              }
+              //free(var_dic_name);
+            }
+            else {  //In the other, check if the output is a input/output variable call in the tag's output
+              process_output(Tag->output, p, p->stack, 0, input_variables);
+              outputBufferPtr = (u_strcmp(p->stack->stack, u_epsilon_string)) ?
+                  p->stack->stack : u_null_string;
+              p->stack->stack[p->stack->stack_pointer+1]='\0';
+              empty(p->stack);
+            }
           }
         } else {
           outputBufferPtr = u_null_string;
