@@ -373,9 +373,9 @@ public:
     if (saveEntre != u_null_string)
       delete saveEntre;
     if (ignoreTable)
-      delete[] ignoreTable;
+      free(ignoreTable);
     if (numOfIgnore)
-      delete[] numOfIgnore;
+      free(numOfIgnore);
     deleteCallIdMap();
   }
   ;
@@ -388,6 +388,12 @@ public:
       u_fclose(foutput);
     }
     foutput = NULL;
+    delete korean;
+    free_alphabet(alphabet);
+	/**/free(processedLexicalMasks);/**/
+	free_OutputVariables(input_variables);
+	free_Variables(p->input_variables);
+	free_OutputVariables(p->output_variables);
   }
 
   /**
@@ -919,7 +925,8 @@ public:
           }
         }
       }
-      INPUTBUFFER[inBufferCnt - 1] = 0;
+      /*INPUTBUFFER[inBufferCnt - 1] = 0;*/
+      INPUTBUFFER[inBufferCnt] = 0;
       OUTPUTBUFFER[outBufferCnt] = 0;   
       if(isKorean) {
         Hanguls_to_Jamos(INPUTBUFFER, jamos, korean, 1);
@@ -3051,6 +3058,8 @@ int main_Fst2List(int argc, char* const argv[]) {
   }
   aa.getWordsFromGraph(changeStrToIdx, changeStrTo, fst2_filename);
   delete ofilename;
+  free_stack_unichar(aa.p->stack);
+  free_locate_parameters(aa.p);
   return SUCCESS_RETURN_CODE;
 }
 

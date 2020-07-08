@@ -402,6 +402,7 @@ void compute_token_controls(const VersatileEncodingConfig*,Alphabet*,const char*
 
 void load_morphological_dictionaries(const VersatileEncodingConfig*,const char* morpho_dic_list,struct locate_parameters* p);
 struct locate_parameters* new_locate_parameters();
+void free_locate_parameters(struct locate_parameters* p);
 
 } // namespace unitex
 
